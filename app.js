@@ -710,6 +710,7 @@ function drawPlanStops(stops) {
     }).addTo(map);
 
     marker.bindPopup(buildPopupHtml(stop.charger, `Recommended charging stop #${i + 1}`));
+    marker.on("popupopen", () => loadNearbyAmenities(marker, stop.charger));
     planMarkers.push(marker);
   });
 }
@@ -811,6 +812,7 @@ function drawChargers(chargers) {
     }).addTo(map);
 
     marker.bindPopup(buildPopupHtml(charger));
+    marker.on("popupopen", () => loadNearbyAmenities(marker, charger));
     chargerMarkers.push(marker);
   });
 }
@@ -853,8 +855,89 @@ function buildPopupHtml(charger, note) {
         <span class="badge" style="background:${plug.color}">${escapeHtml(plug.label)}</span>
       </div>
       <p class="connector-list">${escapeHtml(connectionSummary)}</p>
+      <p class="amenities-line">🔍 Checking what's nearby…</p>
     </div>
   `;
+}
+
+// ---- "What's nearby" — restaurants, playgrounds, restrooms, shops --------
+// Open Charge Map doesn't know about any of this; it comes from a separate
+// free service, Overpass (a query tool for OpenStreetMap's data). This is
+// fetched lazily — only when you actually open a charger's popup, and only
+// once per charger (the result is cached on the charger object itself so
+// reopening the same popup later doesn't fetch it again).
+const AMENITY_SEARCH_RADIUS_METERS = 400; // roughly a quarter mile — walkable during a charging stop
+const AMENITY_TYPES = [
+  { key: "restaurant", icon: "🍔", label: "restaurant" },
+  { key: "playground", icon: "🧒", label: "playground" },
+  { key: "restroom", icon: "🚻", label: "restroom" },
+  { key: "shop", icon: "🛒", label: "shop" },
+];
+
+async function loadNearbyAmenities(marker, charger) {
+  const getPlaceholder = () => marker.getPopup()?.getElement()?.querySelector(".amenities-line");
+
+  if (charger._amenitiesSummary) {
+    const el = getPlaceholder();
+    if (el) el.textContent = charger._amenitiesSummary;
+    return;
+  }
+
+  try {
+    const counts = await fetchNearbyAmenities(charger.AddressInfo.Latitude, charger.AddressInfo.Longitude);
+    charger._amenitiesSummary = summarizeAmenities(counts);
+  } catch (err) {
+    console.error("Overpass amenity lookup failed:", err);
+    charger._amenitiesSummary = "Couldn't check what's nearby right now.";
+  }
+
+  // The popup may have been closed (or a different one opened) while the
+  // fetch was in flight, so re-find the element fresh rather than reuse
+  // a stale reference from before the await.
+  const el = getPlaceholder();
+  if (el) el.textContent = charger._amenitiesSummary;
+}
+
+async function fetchNearbyAmenities(lat, lon) {
+  const query = `
+    [out:json][timeout:15];
+    (
+      node["amenity"~"^(restaurant|cafe|fast_food)$"](around:${AMENITY_SEARCH_RADIUS_METERS},${lat},${lon});
+      node["leisure"="playground"](around:${AMENITY_SEARCH_RADIUS_METERS},${lat},${lon});
+      node["amenity"="toilets"](around:${AMENITY_SEARCH_RADIUS_METERS},${lat},${lon});
+      node["shop"~"^(supermarket|convenience)$"](around:${AMENITY_SEARCH_RADIUS_METERS},${lat},${lon});
+    );
+    out tags;
+  `;
+
+  const response = await fetch("https://overpass-api.de/api/interpreter", {
+    method: "POST",
+    body: query,
+  });
+  if (!response.ok) {
+    throw new Error(`Overpass returned an error (HTTP ${response.status})`);
+  }
+
+  const data = await response.json();
+  const counts = { restaurant: 0, playground: 0, restroom: 0, shop: 0 };
+
+  (data.elements || []).forEach((el) => {
+    const tags = el.tags || {};
+    if (["restaurant", "cafe", "fast_food"].includes(tags.amenity)) counts.restaurant++;
+    else if (tags.leisure === "playground") counts.playground++;
+    else if (tags.amenity === "toilets") counts.restroom++;
+    else if (["supermarket", "convenience"].includes(tags.shop)) counts.shop++;
+  });
+
+  return counts;
+}
+
+function summarizeAmenities(counts) {
+  const parts = AMENITY_TYPES.filter((a) => counts[a.key] > 0).map(
+    (a) => `${a.icon} ${counts[a.key]} ${a.label}${counts[a.key] === 1 ? "" : "s"}`
+  );
+
+  return parts.length > 0 ? parts.join(" · ") : "Nothing nearby found (within ~1/4 mile)";
 }
 
 // Builds a colored circular pin (a lightning bolt on a colored disc) for a

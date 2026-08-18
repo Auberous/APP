@@ -325,3 +325,11 @@ header h1 {
   font-weight: 700;
   margin: 0.1rem 0 0.35rem;
 }
+
+.charger-popup .amenities-line {
+  margin-top: 0.4rem;
+  padding-top: 0.4rem;
+  border-top: 1px solid #eee;
+  font-size: 0.8rem;
+  color: #444;
+}

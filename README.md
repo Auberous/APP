@@ -42,7 +42,11 @@ run entirely in your browser.
    chargers near this route (5 rapid, 7 fast, 2 slow)."
 4. Each pin is **colored by charging speed or plug type** (whichever you pick
    with the toggle above the map) — a legend explains what the colors mean.
-   Click any pin for the full details: address and every connector it has.
+   Click any pin for the full details: address, every connector it has, and
+   what's within about a quarter mile — restaurants, playgrounds, restrooms,
+   supermarkets/shops — fetched from OpenStreetMap's free **Overpass**
+   service the moment you open that pin's popup (only once per charger;
+   reopening the same popup later doesn't re-fetch it).
 5. **If you entered a range**, a second row of boxes appears — 2-3 charging
    *strategies* for that specific route:
    - **Fewest stops** — jumps to the furthest reachable charger each time,
@@ -105,6 +109,13 @@ you're ready — just say the word.
   route/charging math internally works in miles regardless of which unit is
   selected — switching units just converts the number you typed and the
   numbers displayed back to you, instantly, without a new search.
+- **"What's nearby" is a basic count, not a real recommendation.** It just
+  counts OpenStreetMap listings within ~1/4 mile — it doesn't know quality,
+  opening hours, or whether a place has actually closed down since it was
+  last mapped. Overpass (the free service behind this) is also a shared
+  public resource with light rate limits, similar to Nominatim — fine for
+  occasional personal use, but the lookup can occasionally be slow or fail;
+  if it does, the popup just says so rather than retrying automatically.
 
 ## Natural next steps (V3 ideas — not built yet)
 
