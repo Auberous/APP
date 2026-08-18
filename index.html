@@ -10,7 +10,7 @@
     rel="stylesheet"
     href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css"
   />
-  <link rel="stylesheet" href="style.css" />
+  <link rel="stylesheet" href="style.css?v=2" />
 </head>
 <body>
   <header>
@@ -31,8 +31,14 @@
     </div>
 
     <div class="field">
-      <label for="range">Car range in miles (optional)</label>
-      <input id="range" type="number" min="1" placeholder="e.g. 250" />
+      <label for="range" id="range-label">Car range in mi (optional)</label>
+      <div class="range-row">
+        <input id="range" type="number" min="1" placeholder="e.g. 250" />
+        <div class="unit-toggle">
+          <button type="button" id="unit-mi-btn" class="toggle-btn" aria-pressed="true">mi</button>
+          <button type="button" id="unit-km-btn" class="toggle-btn" aria-pressed="false">km</button>
+        </div>
+      </div>
     </div>
 
     <button type="submit" id="find-btn">Find Routes</button>
@@ -77,6 +83,6 @@
 
   <!-- Leaflet's JavaScript library -->
   <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
-  <script src="app.js"></script>
+  <script src="app.js?v=2"></script>
 </body>
 </html>

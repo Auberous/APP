@@ -66,8 +66,18 @@ let rangeMilesForSearch = 0;
 let planStrategies = [];
 let selectedPlanKey = null;
 
+// Which unit distances are typed in and displayed in. All the actual
+// planning math elsewhere in this file works in miles regardless — this
+// only affects what you type/read, converting at the edges.
+let distanceUnit = "mi"; // "mi" or "km"
+const KM_PER_MILE = 1.60934;
+
 const form = document.getElementById("trip-form");
 const startInput = document.getElementById("start");
+const rangeInput = document.getElementById("range");
+const rangeLabelEl = document.getElementById("range-label");
+const unitMiBtn = document.getElementById("unit-mi-btn");
+const unitKmBtn = document.getElementById("unit-km-btn");
 const statusEl = document.getElementById("status");
 const findBtn = document.getElementById("find-btn");
 const routePickerEl = document.getElementById("route-picker");
@@ -80,6 +90,42 @@ const legendEl = document.getElementById("legend");
 const legendItemsEl = document.getElementById("legend-items");
 const modeSpeedBtn = document.getElementById("mode-speed-btn");
 const modePlugBtn = document.getElementById("mode-plug-btn");
+
+unitMiBtn.addEventListener("click", () => setDistanceUnit("mi"));
+unitKmBtn.addEventListener("click", () => setDistanceUnit("km"));
+
+function setDistanceUnit(unit) {
+  distanceUnit = unit;
+  unitMiBtn.setAttribute("aria-pressed", String(unit === "mi"));
+  unitKmBtn.setAttribute("aria-pressed", String(unit === "km"));
+  rangeLabelEl.textContent = `Car range in ${unit} (optional)`;
+  rangeInput.placeholder = unit === "mi" ? "e.g. 250" : "e.g. 400";
+
+  // If route/plan boxes or the written plan are already showing, refresh
+  // their text so distances switch units immediately — no new search needed.
+  if (currentRoutes.length > 0) {
+    renderRouteOptions(currentRoutes);
+    if (selectedRouteIndex !== -1) {
+      markSelectedCard(routeOptionsEl, (_, i) => i === selectedRouteIndex);
+    }
+  }
+  if (selectedPlanKey) {
+    const strategy = planStrategies.find((s) => s.key === selectedPlanKey);
+    if (strategy) renderPlan(strategy.result);
+  }
+}
+
+// Distances from OSRM/route math arrive in meters or miles depending on
+// where they came from — these two helpers both output a unit-aware string
+// like "254 mi" or "409 km", so the display always matches the toggle above.
+function formatDistanceFromMeters(meters) {
+  const miles = meters * MILES_PER_METER;
+  return distanceUnit === "km" ? `${Math.round(miles * KM_PER_MILE)} km` : `${Math.round(miles)} mi`;
+}
+
+function formatDistanceFromMiles(miles) {
+  return distanceUnit === "km" ? `${Math.round(miles * KM_PER_MILE)} km` : `${Math.round(miles)} mi`;
+}
 
 // ---- Find the user and start there, like Google Maps does -----------------
 // On load, ask the browser for permission to use your location. If you say
@@ -144,11 +190,13 @@ function setColorMode(mode) {
 form.addEventListener("submit", async (event) => {
   event.preventDefault(); // stop the page from reloading on submit
 
-  const startText = document.getElementById("start").value.trim();
+  const startText = startInput.value.trim();
   const destText = document.getElementById("destination").value.trim();
-  const rangeValue = parseFloat(document.getElementById("range").value);
+  const rangeValue = parseFloat(rangeInput.value);
   hasRangeForSearch = Number.isFinite(rangeValue) && rangeValue > 0;
-  rangeMilesForSearch = rangeValue;
+  // Planning math elsewhere in this file always works in miles, so convert
+  // here if you typed the range in km.
+  rangeMilesForSearch = hasRangeForSearch ? (distanceUnit === "km" ? rangeValue / KM_PER_MILE : rangeValue) : 0;
 
   setLoading(true);
   clearEverything();
@@ -345,7 +393,7 @@ function renderRouteOptions(routes) {
     btn.className = "option-card";
     btn.innerHTML = `
       <div class="option-title">${i === 0 ? "Fastest" : `Route ${i + 1}`}</div>
-      <div class="option-detail">${formatDuration(route.durationSeconds)} · ${formatMiles(
+      <div class="option-detail">${formatDuration(route.durationSeconds)} · ${formatDistanceFromMeters(
         route.distanceMeters
       )}</div>
     `;
@@ -361,10 +409,6 @@ function formatDuration(seconds) {
   const hours = Math.floor(totalMinutes / 60);
   const minutes = totalMinutes % 60;
   return hours > 0 ? `${hours}h ${minutes}m` : `${minutes}m`;
-}
-
-function formatMiles(meters) {
-  return `${Math.round(meters * MILES_PER_METER)} mi`;
 }
 
 // ---- Step 3: Draw every route option on the map, like a normal map app ----
@@ -630,9 +674,9 @@ function renderPlan(planResult) {
   const { stops, totalMiles, reachable, stuckAtMiles, spareMiles } = planResult;
 
   if (stops.length === 0 && reachable) {
-    planContentEl.innerHTML = `<p>This plan needs no charging stops — you can complete the ~${Math.round(
+    planContentEl.innerHTML = `<p>This plan needs no charging stops — you can complete the ~${formatDistanceFromMiles(
       totalMiles
-    )}-mile trip on your current charge! 🎉</p>`;
+    )} trip on your current charge! 🎉</p>`;
     planEl.hidden = false;
     return;
   }
@@ -641,17 +685,17 @@ function renderPlan(planResult) {
     .map((stop, i) => {
       const title = stop.charger.AddressInfo?.Title || "EV Charger";
       const legMiles = i === 0 ? stop.milesAlongRoute : stop.milesAlongRoute - stops[i - 1].milesAlongRoute;
-      return `<li><strong>Stop ${i + 1}: ${escapeHtml(title)}</strong> — about ${Math.round(
+      return `<li><strong>Stop ${i + 1}: ${escapeHtml(title)}</strong> — about ${formatDistanceFromMiles(
         stop.milesAlongRoute
-      )} miles into the trip (${Math.round(legMiles)} miles since the last stop)</li>`;
+      )} into the trip (${formatDistanceFromMiles(legMiles)} since the last stop)</li>`;
     })
     .join("");
 
   const footer = reachable
-    ? `<p>Arrive at your destination with roughly ${Math.round(spareMiles)} miles of range to spare.</p>`
-    : `<p class="plan-warning">⚠️ Could only plan stops up to about mile ${Math.round(
+    ? `<p>Arrive at your destination with roughly ${formatDistanceFromMiles(spareMiles)} of range to spare.</p>`
+    : `<p class="plan-warning">⚠️ Could only plan stops up to about ${formatDistanceFromMiles(
         stuckAtMiles
-      )} of ${Math.round(totalMiles)} — no charger was found within range after that point.</p>`;
+      )} of ${formatDistanceFromMiles(totalMiles)} — no charger was found within range after that point.</p>`;
 
   planContentEl.innerHTML = `<ol>${items}</ol>${footer}`;
   planEl.hidden = false;

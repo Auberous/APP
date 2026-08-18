@@ -3,9 +3,9 @@
 A simple webpage: opens centered on you (with permission) and your start
 location pre-filled, like a normal navigation app. Type a destination, pick
 one of a few route options, and see EV chargers plotted along it. Enter your
-car's range and it becomes a route-planning advisor: pick from a few
-charging-plan strategies, each showing the stops needed to actually complete
-the trip.
+car's range (miles or km, your choice) and it becomes a route-planning
+advisor: pick from a few charging-plan strategies, each showing the stops
+needed to actually complete the trip.
 
 ## What's in this project
 
@@ -101,6 +101,10 @@ you're ready — just say the word.
   `app.js` and rate limits are generous enough for one person's occasional
   use. If usage grows a lot, consider a paid/self-hosted routing service
   instead of the public OSRM demo server too.
+- **The mi/km toggle only affects what you see and type.** All the actual
+  route/charging math internally works in miles regardless of which unit is
+  selected — switching units just converts the number you typed and the
+  numbers displayed back to you, instantly, without a new search.
 
 ## Natural next steps (V3 ideas — not built yet)
 

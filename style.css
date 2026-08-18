@@ -56,6 +56,22 @@ header h1 {
   min-width: 180px;
 }
 
+/* The range input plus its mi/km toggle buttons, side by side */
+.range-row {
+  display: flex;
+  align-items: center;
+  gap: 0.4rem;
+}
+
+.range-row input {
+  min-width: 120px;
+}
+
+.unit-toggle {
+  display: flex;
+  gap: 0.25rem;
+}
+
 #find-btn {
   padding: 0.6rem 1.1rem;
   background: #1a73e8;
