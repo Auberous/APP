@@ -44,7 +44,7 @@ run entirely in your browser.
    with the toggle above the map) — a legend explains what the colors mean.
    Click any pin for the full details: address, every connector it has, and
    what's nearby — named restaurants/cafes, playgrounds, restrooms, and
-   supermarkets/shops within the distance you set in the form (400m by
+   supermarkets/shops within the distance you set in the form (100m by
    default), each with its walking distance from the charger (e.g.
    "McDonald's — 350 ft"), fetched from OpenStreetMap's free **Overpass**
    service the moment you open that pin's popup (only once per charger;
@@ -60,7 +60,7 @@ run entirely in your browser.
      you still have ~20% range left, rather than cutting it close.
    - **Family-friendly stops** — only appears if you checked any "Prefer
      stops near" boxes in the form (restaurant/cafe, playground, restroom,
-     shop) and set how far counts as "near" (400m by default — the same
+     shop) and set how far counts as "near" (100m by default — the same
      distance field also controls the popup's "what's nearby" section).
      Same idea as "Fewest stops", but at each step it checks a handful of
      the reachable chargers (furthest first) against Overpass and picks the

@@ -137,7 +137,7 @@ function formatDistanceFromMiles(miles) {
 // (meters/feet suit it better than miles/km). Read at submit time into
 // amenityDistanceMetersForSearch, which every amenity lookup uses.
 let amenityDistanceUnit = "m"; // "m" or "ft"
-let amenityDistanceMetersForSearch = 400; // overwritten on submit; matches the form's default
+let amenityDistanceMetersForSearch = 100; // overwritten on submit; matches the form's default
 
 amenityUnitMBtn.addEventListener("click", () => setAmenityDistanceUnit("m"));
 amenityUnitFtBtn.addEventListener("click", () => setAmenityDistanceUnit("ft"));
@@ -228,7 +228,7 @@ form.addEventListener("submit", async (event) => {
       ? amenityDistanceUnit === "ft"
         ? amenityDistanceValue / 3.28084
         : amenityDistanceValue
-      : 400; // fall back to the default if left blank/invalid
+      : 100; // fall back to the default if left blank/invalid
 
   setLoading(true);
   clearEverything();
