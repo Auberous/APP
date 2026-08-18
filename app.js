@@ -235,7 +235,12 @@ async function selectRoute(index) {
     if (chargers.length === 0) {
       setStatus("Route found, but no chargers turned up nearby. Try a different route option.");
     } else {
-      setStatus(`Found ${chargers.length} charger${chargers.length === 1 ? "" : "s"} near this route.`);
+      const breakdown = summarizeChargerSpeeds(chargers);
+      setStatus(
+        `Found ${chargers.length} charger${chargers.length === 1 ? "" : "s"} near this route` +
+          (breakdown ? ` (${breakdown})` : "") +
+          "."
+      );
       legendEl.hidden = false;
       renderLegend();
     }
@@ -708,6 +713,22 @@ function getSpeedCategory(charger) {
   const maxKW = getMaxPowerKW(charger);
   if (maxKW == null) return SPEED_UNKNOWN;
   return SPEED_CATEGORIES.find((cat) => maxKW >= cat.minKW) || SPEED_UNKNOWN;
+}
+
+// Quick at-a-glance breakdown of a set of chargers by speed, e.g.
+// "5 rapid, 7 fast, 2 slow" — used in the status line so you don't have to
+// click every pin just to see what's available.
+function summarizeChargerSpeeds(chargers) {
+  const counts = {};
+  chargers.forEach((charger) => {
+    const key = getSpeedCategory(charger).key;
+    counts[key] = (counts[key] || 0) + 1;
+  });
+
+  return [...SPEED_CATEGORIES, SPEED_UNKNOWN]
+    .filter((cat) => counts[cat.key] > 0)
+    .map((cat) => `${counts[cat.key]} ${cat.key === "unknown" ? "unknown speed" : cat.key}`)
+    .join(", ");
 }
 
 function classifyConnectionTitle(title) {

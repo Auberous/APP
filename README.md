@@ -37,7 +37,9 @@ run entirely in your browser.
    in grey, like a normal map app.
 3. **You pick a route box.** That route's line turns bold blue (others fade
    to grey) and the map zooms to it, then **Open Charge Map** is asked
-   "what chargers are near this route?" — each one gets a pin.
+   "what chargers are near this route?" — each one gets a pin, and the
+   status line above the map gives a quick breakdown, e.g. "Found 14
+   chargers near this route (5 rapid, 7 fast, 2 slow)."
 4. Each pin is **colored by charging speed or plug type** (whichever you pick
    with the toggle above the map) — a legend explains what the colors mean.
    Click any pin for the full details: address and every connector it has.
