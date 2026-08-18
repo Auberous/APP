@@ -89,9 +89,82 @@ header h1 {
   font-weight: 600;
 }
 
+/* The "color pins by" toggle + legend, shown above the map once chargers load */
+.legend {
+  max-width: 900px;
+  margin: 0 auto 0.75rem;
+  padding: 0.6rem 1rem;
+  background: white;
+  border: 1px solid #e0e0e0;
+  border-radius: 8px;
+}
+
+.legend-toggle {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  flex-wrap: wrap;
+  font-size: 0.85rem;
+  font-weight: 600;
+  color: #333;
+}
+
+.toggle-btn {
+  padding: 0.3rem 0.7rem;
+  border: 1px solid #1a73e8;
+  background: white;
+  color: #1a73e8;
+  border-radius: 999px;
+  font-size: 0.82rem;
+  font-weight: 600;
+  cursor: pointer;
+}
+
+.toggle-btn[aria-pressed="true"] {
+  background: #1a73e8;
+  color: white;
+}
+
+.legend-items {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.75rem;
+  margin-top: 0.5rem;
+}
+
+.legend-item {
+  display: flex;
+  align-items: center;
+  gap: 0.35rem;
+  font-size: 0.8rem;
+  color: #444;
+}
+
+.legend-swatch {
+  width: 12px;
+  height: 12px;
+  border-radius: 50%;
+  display: inline-block;
+  flex-shrink: 0;
+}
+
 #map {
   height: 70vh;
   width: 100%;
+}
+
+/* The colored circular charger pins on the map (color set inline per marker) */
+.charger-div-icon span {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 22px;
+  height: 22px;
+  border-radius: 50%;
+  border: 2px solid white;
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.45);
+  font-size: 11px;
+  line-height: 1;
 }
 
 /* Popup styling for charger markers */
@@ -103,4 +176,25 @@ header h1 {
 .charger-popup p {
   margin: 0.15rem 0;
   font-size: 0.85rem;
+}
+
+.charger-popup .badges {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.3rem;
+  margin: 0.3rem 0;
+}
+
+.charger-popup .badge {
+  display: inline-block;
+  padding: 0.1rem 0.5rem;
+  border-radius: 999px;
+  font-size: 0.75rem;
+  font-weight: 600;
+  color: white;
+}
+
+.charger-popup .connector-list {
+  margin-top: 0.35rem;
+  color: #555;
 }

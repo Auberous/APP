@@ -41,6 +41,17 @@
   <!-- Status messages: "Loading...", errors, etc. -->
   <p id="status" role="status"></p>
 
+  <!-- Shown once chargers are found: lets you switch what the pin colors mean,
+       and explains what each color is. Hidden until there are results. -->
+  <div id="legend" class="legend" hidden>
+    <div class="legend-toggle">
+      <span>Color pins by:</span>
+      <button type="button" id="mode-speed-btn" class="toggle-btn" aria-pressed="true">Charging speed</button>
+      <button type="button" id="mode-plug-btn" class="toggle-btn" aria-pressed="false">Plug type</button>
+    </div>
+    <div id="legend-items" class="legend-items"></div>
+  </div>
+
   <!-- The map itself gets drawn inside this div by Leaflet -->
   <div id="map"></div>
 

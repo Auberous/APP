@@ -26,6 +26,9 @@ run entirely in your browser.
    map tiles.
 5. **Open Charge Map** is asked "what chargers are in the area around this
    route?" and each one gets a pin.
+6. Each pin is **colored by charging speed or plug type** (whichever you pick
+   with the toggle above the map) — a legend explains what the colors mean.
+   Click any pin for the full details: address and every connector it has.
 
 None of these services require you to sign up or pay for V1 — they're all
 free, public APIs meant for exactly this kind of light personal use.
@@ -71,9 +74,11 @@ you're ready — just say the word.
 
 ## Natural next steps (V2 ideas — not built yet)
 
-- Use range to actually filter to chargers you could reach, and plan stops.
+- **A charging "advisor"**: use your range to figure out which chargers you
+  can actually reach and recommend a real charging plan, instead of just
+  showing everything nearby. This is the next big feature planned.
 - Show distance/time to each charger from the route.
-- Filter chargers by connector type or charging speed.
+- Let you hide/filter out charger types you don't care about, not just color them.
 - Save/share a planned trip (would need some form of backend + accounts).
 
 We can tackle these one at a time once V1 feels solid.

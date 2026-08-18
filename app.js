@@ -34,9 +34,29 @@ L.tileLayer("https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png", {
 let routeLayer = null;
 let chargerMarkers = [];
 
+// The most recent set of chargers found, kept around so switching the
+// "color pins by" toggle can instantly recolor them without a new search.
+let lastChargers = [];
+let colorMode = "speed"; // "speed" or "plug"
+
 const form = document.getElementById("trip-form");
 const statusEl = document.getElementById("status");
 const findBtn = document.getElementById("find-btn");
+const legendEl = document.getElementById("legend");
+const legendItemsEl = document.getElementById("legend-items");
+const modeSpeedBtn = document.getElementById("mode-speed-btn");
+const modePlugBtn = document.getElementById("mode-plug-btn");
+
+modeSpeedBtn.addEventListener("click", () => setColorMode("speed"));
+modePlugBtn.addEventListener("click", () => setColorMode("plug"));
+
+function setColorMode(mode) {
+  colorMode = mode;
+  modeSpeedBtn.setAttribute("aria-pressed", String(mode === "speed"));
+  modePlugBtn.setAttribute("aria-pressed", String(mode === "plug"));
+  renderLegend();
+  redrawChargerMarkers();
+}
 
 form.addEventListener("submit", async (event) => {
   event.preventDefault(); // stop the page from reloading on submit
@@ -47,6 +67,7 @@ form.addEventListener("submit", async (event) => {
 
   setLoading(true);
   clearMap();
+  legendEl.hidden = true;
 
   try {
     // Step 1: turn addresses into coordinates
@@ -64,14 +85,18 @@ form.addEventListener("submit", async (event) => {
     // Step 4 + 5: find and draw chargers near the route
     setStatus("Finding EV chargers near your route...");
     const chargers = await getChargersNearRoute(route);
+    lastChargers = chargers;
     drawChargers(chargers);
 
     if (chargers.length === 0) {
       setStatus(
         "Route found, but no chargers turned up nearby. Try a different route or zoom out to look around."
       );
+      legendEl.hidden = true;
     } else {
       setStatus(`Found ${chargers.length} charger${chargers.length === 1 ? "" : "s"} near your route.`);
+      legendEl.hidden = false;
+      renderLegend();
     }
   } catch (err) {
     console.error(err);
@@ -229,13 +254,73 @@ async function fetchChargersNear(point) {
 }
 
 // ---- Step 5: Draw charger pins on the map ----------------------------------
+
+// Speed categories, checked from fastest to slowest — a charger is placed in
+// the first category its fastest connector qualifies for.
+const SPEED_CATEGORIES = [
+  { key: "rapid", label: "Rapid (100kW+)", color: "#d32f2f", minKW: 100 },
+  { key: "fast", label: "Fast (20–99kW)", color: "#f57c00", minKW: 20 },
+  { key: "slow", label: "Slow (under 20kW)", color: "#1976d2", minKW: 0 },
+];
+const SPEED_UNKNOWN = { key: "unknown", label: "Speed unknown", color: "#757575" };
+
+// Plug/connector categories. A charging site often has several connector
+// types; we pick the single "best" one present (in this priority order) to
+// represent and color the whole site, since that keeps one pin = one color.
+const PLUG_CATEGORIES = {
+  ccs: { label: "CCS", color: "#1976d2" },
+  chademo: { label: "CHAdeMO", color: "#8e24aa" },
+  tesla: { label: "Tesla", color: "#e53935" },
+  type2: { label: "Type 2", color: "#43a047" },
+  type1: { label: "Type 1 (J1772)", color: "#00897b" },
+};
+const PLUG_UNKNOWN = { key: "unknown", label: "Other / unknown", color: "#757575" };
+const PLUG_PRIORITY = ["ccs", "chademo", "tesla", "type2", "type1"];
+
+function getMaxPowerKW(charger) {
+  if (!Array.isArray(charger.Connections)) return null;
+  const powers = charger.Connections.map((c) => c.PowerKW).filter((kw) => typeof kw === "number");
+  return powers.length > 0 ? Math.max(...powers) : null;
+}
+
+function getSpeedCategory(charger) {
+  const maxKW = getMaxPowerKW(charger);
+  if (maxKW == null) return SPEED_UNKNOWN;
+  return SPEED_CATEGORIES.find((cat) => maxKW >= cat.minKW) || SPEED_UNKNOWN;
+}
+
+function classifyConnectionTitle(title) {
+  const t = (title || "").toLowerCase();
+  if (t.includes("ccs")) return "ccs";
+  if (t.includes("chademo")) return "chademo";
+  if (t.includes("tesla")) return "tesla";
+  if (t.includes("type 2") || t.includes("type2")) return "type2";
+  if (t.includes("type 1") || t.includes("j1772")) return "type1";
+  return null;
+}
+
+function getPlugCategory(charger) {
+  if (!Array.isArray(charger.Connections)) return PLUG_UNKNOWN;
+
+  const present = new Set(
+    charger.Connections.map((c) => classifyConnectionTitle(c.ConnectionType?.Title)).filter(Boolean)
+  );
+  const bestKey = PLUG_PRIORITY.find((key) => present.has(key));
+  return bestKey ? { key: bestKey, ...PLUG_CATEGORIES[bestKey] } : PLUG_UNKNOWN;
+}
+
+function getMarkerCategory(charger) {
+  return colorMode === "plug" ? getPlugCategory(charger) : getSpeedCategory(charger);
+}
+
 function drawChargers(chargers) {
   chargers.forEach((charger) => {
     const info = charger.AddressInfo;
     if (!info || info.Latitude == null || info.Longitude == null) return;
 
+    const color = getMarkerCategory(charger).color;
     const marker = L.marker([info.Latitude, info.Longitude], {
-      icon: chargerIcon,
+      icon: makeChargerIcon(color),
     }).addTo(map);
 
     marker.bindPopup(buildPopupHtml(charger));
@@ -243,10 +328,22 @@ function drawChargers(chargers) {
   });
 }
 
+// Removes and redraws the charger pins from the last search results, using
+// the current colorMode. Used when the "color pins by" toggle changes, so
+// switching modes is instant and doesn't need a new Open Charge Map request.
+function redrawChargerMarkers() {
+  chargerMarkers.forEach((m) => map.removeLayer(m));
+  chargerMarkers = [];
+  drawChargers(lastChargers);
+}
+
 function buildPopupHtml(charger) {
   const info = charger.AddressInfo || {};
   const title = info.Title || "EV Charger";
   const address = [info.AddressLine1, info.Town, info.Postcode].filter(Boolean).join(", ");
+
+  const speed = getSpeedCategory(charger);
+  const plug = getPlugCategory(charger);
 
   let connectionSummary = "Connector info not available";
   if (Array.isArray(charger.Connections) && charger.Connections.length > 0) {
@@ -263,18 +360,43 @@ function buildPopupHtml(charger) {
     <div class="charger-popup">
       <h3>${escapeHtml(title)}</h3>
       ${address ? `<p>${escapeHtml(address)}</p>` : ""}
-      <p>${escapeHtml(connectionSummary)}</p>
+      <div class="badges">
+        <span class="badge" style="background:${speed.color}">${escapeHtml(speed.label)}</span>
+        <span class="badge" style="background:${plug.color}">${escapeHtml(plug.label)}</span>
+      </div>
+      <p class="connector-list">${escapeHtml(connectionSummary)}</p>
     </div>
   `;
 }
 
-// A simple lightning-bolt style marker so chargers stand out from the route line.
-const chargerIcon = L.divIcon({
-  className: "charger-div-icon",
-  html: "⚡",
-  iconSize: [20, 20],
-  iconAnchor: [10, 10],
-});
+// Builds a colored circular pin (a lightning bolt on a colored disc) for a
+// given hex color, so the same icon shape works for either color mode.
+function makeChargerIcon(color) {
+  return L.divIcon({
+    className: "charger-div-icon",
+    html: `<span style="background:${color}">⚡</span>`,
+    iconSize: [22, 22],
+    iconAnchor: [11, 11],
+  });
+}
+
+// Fills in the legend panel to match the current colorMode.
+function renderLegend() {
+  const categories = colorMode === "plug"
+    ? [...PLUG_PRIORITY.map((key) => ({ key, ...PLUG_CATEGORIES[key] })), PLUG_UNKNOWN]
+    : [...SPEED_CATEGORIES, SPEED_UNKNOWN];
+
+  legendItemsEl.innerHTML = categories
+    .map(
+      (cat) => `
+        <span class="legend-item">
+          <span class="legend-swatch" style="background:${cat.color}"></span>
+          ${escapeHtml(cat.label)}
+        </span>
+      `
+    )
+    .join("");
+}
 
 // ---- Helpers ----------------------------------------------------------------
 function clearMap() {
