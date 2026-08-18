@@ -11,11 +11,12 @@
  * No server, no login, no database — everything happens right here in the browser.
  */
 
-// ---- Optional: Open Charge Map API key -----------------------------------
-// The app works without a key, but Open Charge Map allows more requests per
-// day if you register (free, no credit card) at https://openchargemap.org/site/loginproviders
-// and paste your key between the quotes below. Leaving it blank is fine for V1.
-const OCM_API_KEY = "";
+// ---- Open Charge Map API key -----------------------------------------------
+// Open Charge Map now requires a registered key on requests (an unkeyed
+// request gets rejected with HTTP 403). This is a free, rate-limit-only key
+// tied to a personal Open Charge Map account — it's not a secret and it's
+// fine for it to be visible here in a public repo.
+const OCM_API_KEY = "73d5a487-00e9-40c6-b804-6210f537899b";
 
 // ---- Set up the map --------------------------------------------------------
 // Centered roughly on the middle of the US by default, zoomed out.

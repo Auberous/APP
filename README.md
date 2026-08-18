@@ -64,10 +64,10 @@ you're ready — just say the word.
   along your route and shows chargers within 25 miles of each one — close
   to the actual road, but not a precise "chargers exactly on this road"
   search.
-- **No API key required, but rate limits are light.** For a single person
-  using this occasionally, that's fine. If usage grows, get a free Open
-  Charge Map key (see the comment at the top of `app.js`) and consider a
-  paid/self-hosted routing service instead of the public OSRM demo server.
+- **Uses a free personal Open Charge Map key.** It's already set in
+  `app.js` and rate limits are generous enough for one person's occasional
+  use. If usage grows a lot, consider a paid/self-hosted routing service
+  instead of the public OSRM demo server too.
 
 ## Natural next steps (V2 ideas — not built yet)
 
