@@ -72,6 +72,32 @@ header h1 {
   gap: 0.25rem;
 }
 
+/* The "prefer stops near" amenity checkboxes in the form */
+.amenity-checks {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem 0.9rem;
+  padding: 0.5rem 0;
+}
+
+/* Scoped as .amenity-checks .amenity-check (two classes) so it reliably
+   overrides the more general .field label rule above, which would
+   otherwise make these look bold like the field's own label. */
+.amenity-checks .amenity-check {
+  display: flex;
+  align-items: center;
+  gap: 0.3rem;
+  font-size: 0.85rem;
+  color: #333;
+  font-weight: normal;
+  cursor: pointer;
+  white-space: nowrap;
+}
+
+.amenity-checks .amenity-check input {
+  cursor: pointer;
+}
+
 #find-btn {
   padding: 0.6rem 1.1rem;
   background: #1a73e8;

@@ -63,6 +63,7 @@ let currentRoutes = [];
 let selectedRouteIndex = -1;
 let hasRangeForSearch = false;
 let rangeMilesForSearch = 0;
+let preferredAmenitiesForSearch = []; // amenity keys checked in the form, e.g. ["restaurant","playground"]
 let planStrategies = [];
 let selectedPlanKey = null;
 
@@ -78,6 +79,7 @@ const rangeInput = document.getElementById("range");
 const rangeLabelEl = document.getElementById("range-label");
 const unitMiBtn = document.getElementById("unit-mi-btn");
 const unitKmBtn = document.getElementById("unit-km-btn");
+const amenityCheckboxes = document.querySelectorAll('.amenity-check input[type="checkbox"]');
 const statusEl = document.getElementById("status");
 const findBtn = document.getElementById("find-btn");
 const routePickerEl = document.getElementById("route-picker");
@@ -197,6 +199,9 @@ form.addEventListener("submit", async (event) => {
   // Planning math elsewhere in this file always works in miles, so convert
   // here if you typed the range in km.
   rangeMilesForSearch = hasRangeForSearch ? (distanceUnit === "km" ? rangeValue / KM_PER_MILE : rangeValue) : 0;
+  preferredAmenitiesForSearch = Array.from(amenityCheckboxes)
+    .filter((cb) => cb.checked)
+    .map((cb) => cb.value);
 
   setLoading(true);
   clearEverything();
@@ -283,14 +288,27 @@ async function selectRoute(index) {
     if (chargers.length === 0) {
       setStatus("Route found, but no chargers turned up nearby. Try a different route option.");
     } else {
-      const breakdown = summarizeChargerSpeeds(chargers);
-      setStatus(
-        `Found ${chargers.length} charger${chargers.length === 1 ? "" : "s"} near this route` +
-          (breakdown ? ` (${breakdown})` : "") +
-          "."
-      );
+      setStatus(chargerFoundStatus(chargers));
       legendEl.hidden = false;
       renderLegend();
+    }
+
+    // A 4th plan box, "Family-friendly stops", only appears if at least one
+    // amenity preference was checked. It's built after the other 3 since it
+    // has to check candidates against Open Street Map data one at a time,
+    // which takes a moment longer than the instant math the rest use.
+    if (hasRangeForSearch && preferredAmenitiesForSearch.length > 0 && chargers.length > 0) {
+      setStatus("Checking nearby amenities for a family-friendly option...");
+      const familyStrategy = await buildFamilyStrategy(
+        chargers,
+        route,
+        rangeMilesForSearch,
+        preferredAmenitiesForSearch
+      );
+      planStrategies.push(familyStrategy);
+      renderPlanOptions(planStrategies);
+      markSelectedCard(planOptionsEl, (child) => child.dataset.planKey === selectedPlanKey);
+      setStatus(chargerFoundStatus(chargers));
     }
   } catch (err) {
     console.error(err);
@@ -575,6 +593,15 @@ function locateChargerOnRoute(charger, routeIndex) {
   };
 }
 
+// Turns a charger list into candidates ordered by how far along the route
+// they sit — the shared starting point for every planning strategy below.
+function buildCandidates(chargers, routeIndex) {
+  return chargers
+    .filter((c) => c.AddressInfo?.Latitude != null && c.AddressInfo?.Longitude != null)
+    .map((charger) => ({ charger, ...locateChargerOnRoute(charger, routeIndex) }))
+    .sort((a, b) => a.milesAlongRoute - b.milesAlongRoute);
+}
+
 // reachRangeMiles is the range used to decide when a stop is needed —
 // normally your real range, but the "Extra buffer" strategy passes in a
 // reduced number here so it stops sooner/more often. trueRangeMiles is
@@ -584,11 +611,7 @@ function locateChargerOnRoute(charger, routeIndex) {
 function planChargingStops(chargers, route, reachRangeMiles, trueRangeMiles = reachRangeMiles) {
   const routeIndex = buildRouteIndex(route);
   const totalMiles = routeIndex[routeIndex.length - 1].cumMiles;
-
-  const candidates = chargers
-    .filter((c) => c.AddressInfo?.Latitude != null && c.AddressInfo?.Longitude != null)
-    .map((charger) => ({ charger, ...locateChargerOnRoute(charger, routeIndex) }))
-    .sort((a, b) => a.milesAlongRoute - b.milesAlongRoute);
+  const candidates = buildCandidates(chargers, routeIndex);
 
   const stops = [];
   let position = 0;
@@ -641,6 +664,91 @@ function buildPlanStrategies(chargers, route, rangeMiles) {
   ];
 }
 
+// The 4th, optional strategy: prefer stops near the amenities you checked
+// (restaurant/playground/restroom/shop). Same "fewest stops" logic as
+// above, but at each step it checks a bounded number of the reachable
+// candidates (furthest first) against Open Street Map's amenity data and
+// picks the first one that has all your chosen amenities nearby. If none
+// of the checked candidates qualify, it falls back to the plain furthest-
+// reachable charger — same as "Fewest stops" — rather than leaving a gap
+// in the plan, and that stop is marked as not matched so the plan is
+// honest about it.
+const MAX_AMENITY_CHECKS_PER_STOP = 6;
+
+async function buildFamilyStrategy(chargers, route, rangeMiles, preferredAmenities) {
+  const routeIndex = buildRouteIndex(route);
+  const totalMiles = routeIndex[routeIndex.length - 1].cumMiles;
+  const candidates = buildCandidates(chargers, routeIndex);
+
+  const stops = [];
+  let position = 0;
+  let reachable = true;
+  let stuckAtMiles = null;
+  let allStopsMatched = true;
+
+  while (position + rangeMiles < totalMiles) {
+    const inReach = candidates
+      .filter((c) => c.milesAlongRoute > position && c.milesAlongRoute <= position + rangeMiles)
+      .sort((a, b) => b.milesAlongRoute - a.milesAlongRoute); // furthest first, like the other strategies
+
+    if (inReach.length === 0) {
+      reachable = false;
+      stuckAtMiles = position;
+      break;
+    }
+
+    let chosen = null;
+    for (const candidate of inReach.slice(0, MAX_AMENITY_CHECKS_PER_STOP)) {
+      if (await candidateMatchesAmenities(candidate.charger, preferredAmenities)) {
+        chosen = candidate;
+        chosen.amenityMatch = true;
+        break;
+      }
+    }
+
+    if (!chosen) {
+      chosen = inReach[0]; // fall back to the furthest reachable charger, no gap left in the plan
+      chosen.amenityMatch = false;
+      allStopsMatched = false;
+    }
+
+    stops.push(chosen);
+    position = chosen.milesAlongRoute;
+  }
+
+  return {
+    key: "family",
+    label: "Family-friendly stops",
+    result: {
+      stops,
+      totalMiles,
+      reachable,
+      stuckAtMiles,
+      spareMiles: reachable ? position + rangeMiles - totalMiles : null,
+      allStopsMatched,
+    },
+  };
+}
+
+// Checks (and caches, on the charger itself) whether a charger has every
+// one of the preferred amenities within the same radius used everywhere
+// else in the app. A failed lookup counts as "no match" rather than
+// stopping the whole plan.
+async function candidateMatchesAmenities(charger, preferredAmenities) {
+  if (!charger._amenityCounts) {
+    try {
+      charger._amenityCounts = await fetchNearbyAmenities(
+        charger.AddressInfo.Latitude,
+        charger.AddressInfo.Longitude
+      );
+    } catch (err) {
+      console.error("Amenity check failed for a candidate charger:", err);
+      return false;
+    }
+  }
+  return preferredAmenities.every((key) => charger._amenityCounts[key] > 0);
+}
+
 // Fills in the plan-picker boxes: one per strategy, showing how many stops
 // it needs (or that it isn't fully possible on this route).
 function renderPlanOptions(strategies) {
@@ -653,11 +761,20 @@ function renderPlanOptions(strategies) {
     btn.dataset.planKey = strategy.key;
 
     const stopCount = strategy.result.stops.length;
-    const detail = !strategy.result.reachable
-      ? "Not fully possible on this route"
-      : stopCount === 0
-      ? "No stops needed"
-      : `${stopCount} stop${stopCount === 1 ? "" : "s"}`;
+    let detail;
+    if (!strategy.result.reachable) {
+      detail = "Not fully possible on this route";
+    } else if (stopCount === 0) {
+      detail = "No stops needed";
+    } else if (strategy.key === "family") {
+      const matched = strategy.result.stops.filter((s) => s.amenityMatch).length;
+      detail =
+        matched === stopCount
+          ? `${stopCount} stop${stopCount === 1 ? "" : "s"} — all match!`
+          : `${stopCount} stop${stopCount === 1 ? "" : "s"} (${matched} match)`;
+    } else {
+      detail = `${stopCount} stop${stopCount === 1 ? "" : "s"}`;
+    }
 
     btn.innerHTML = `
       <div class="option-title">${escapeHtml(strategy.label)}</div>
@@ -685,9 +802,15 @@ function renderPlan(planResult) {
     .map((stop, i) => {
       const title = stop.charger.AddressInfo?.Title || "EV Charger";
       const legMiles = i === 0 ? stop.milesAlongRoute : stop.milesAlongRoute - stops[i - 1].milesAlongRoute;
+      const amenityNote =
+        stop.amenityMatch === true
+          ? " · ✅ near your preferred amenities"
+          : stop.amenityMatch === false
+          ? " · ⚠️ no matching amenities found nearby"
+          : "";
       return `<li><strong>Stop ${i + 1}: ${escapeHtml(title)}</strong> — about ${formatDistanceFromMiles(
         stop.milesAlongRoute
-      )} into the trip (${formatDistanceFromMiles(legMiles)} since the last stop)</li>`;
+      )} into the trip (${formatDistanceFromMiles(legMiles)} since the last stop)${amenityNote}</li>`;
     })
     .join("");
 
@@ -774,6 +897,15 @@ function summarizeChargerSpeeds(chargers) {
     .filter((cat) => counts[cat.key] > 0)
     .map((cat) => `${counts[cat.key]} ${cat.key === "unknown" ? "unknown speed" : cat.key}`)
     .join(", ");
+}
+
+function chargerFoundStatus(chargers) {
+  const breakdown = summarizeChargerSpeeds(chargers);
+  return (
+    `Found ${chargers.length} charger${chargers.length === 1 ? "" : "s"} near this route` +
+    (breakdown ? ` (${breakdown})` : "") +
+    "."
+  );
 }
 
 function classifyConnectionTitle(title) {
@@ -877,25 +1009,28 @@ const AMENITY_TYPES = [
 async function loadNearbyAmenities(marker, charger) {
   const getPlaceholder = () => marker.getPopup()?.getElement()?.querySelector(".amenities-line");
 
-  if (charger._amenitiesSummary) {
-    const el = getPlaceholder();
-    if (el) el.textContent = charger._amenitiesSummary;
-    return;
-  }
-
-  try {
-    const counts = await fetchNearbyAmenities(charger.AddressInfo.Latitude, charger.AddressInfo.Longitude);
-    charger._amenitiesSummary = summarizeAmenities(counts);
-  } catch (err) {
-    console.error("Overpass amenity lookup failed:", err);
-    charger._amenitiesSummary = "Couldn't check what's nearby right now.";
+  // charger._amenityCounts may already be cached — either from a previous
+  // popup open, or from the "Family-friendly stops" plan strategy having
+  // already checked this exact charger while building its plan.
+  if (!charger._amenityCounts) {
+    try {
+      charger._amenityCounts = await fetchNearbyAmenities(
+        charger.AddressInfo.Latitude,
+        charger.AddressInfo.Longitude
+      );
+    } catch (err) {
+      console.error("Overpass amenity lookup failed:", err);
+      const el = getPlaceholder();
+      if (el) el.textContent = "Couldn't check what's nearby right now.";
+      return;
+    }
   }
 
   // The popup may have been closed (or a different one opened) while the
   // fetch was in flight, so re-find the element fresh rather than reuse
   // a stale reference from before the await.
   const el = getPlaceholder();
-  if (el) el.textContent = charger._amenitiesSummary;
+  if (el) el.textContent = summarizeAmenities(charger._amenityCounts);
 }
 
 async function fetchNearbyAmenities(lat, lon) {

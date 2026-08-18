@@ -10,7 +10,7 @@
     rel="stylesheet"
     href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css"
   />
-  <link rel="stylesheet" href="style.css?v=3" />
+  <link rel="stylesheet" href="style.css?v=4" />
 </head>
 <body>
   <header>
@@ -38,6 +38,16 @@
           <button type="button" id="unit-mi-btn" class="toggle-btn" aria-pressed="true">mi</button>
           <button type="button" id="unit-km-btn" class="toggle-btn" aria-pressed="false">km</button>
         </div>
+      </div>
+    </div>
+
+    <div class="field">
+      <label>Prefer stops near (optional)</label>
+      <div class="amenity-checks">
+        <label class="amenity-check"><input type="checkbox" value="restaurant" /> 🍔 Restaurant</label>
+        <label class="amenity-check"><input type="checkbox" value="playground" /> 🧒 Playground</label>
+        <label class="amenity-check"><input type="checkbox" value="restroom" /> 🚻 Restroom</label>
+        <label class="amenity-check"><input type="checkbox" value="shop" /> 🛒 Shop</label>
       </div>
     </div>
 
@@ -83,6 +93,6 @@
 
   <!-- Leaflet's JavaScript library -->
   <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
-  <script src="app.js?v=3"></script>
+  <script src="app.js?v=4"></script>
 </body>
 </html>

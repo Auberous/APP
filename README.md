@@ -47,7 +47,7 @@ run entirely in your browser.
    supermarkets/shops — fetched from OpenStreetMap's free **Overpass**
    service the moment you open that pin's popup (only once per charger;
    reopening the same popup later doesn't re-fetch it).
-5. **If you entered a range**, a second row of boxes appears — 2-3 charging
+5. **If you entered a range**, a second row of boxes appears — charging
    *strategies* for that specific route:
    - **Fewest stops** — jumps to the furthest reachable charger each time,
      "recharges" fully, and repeats. Minimizes how many times you stop.
@@ -55,6 +55,15 @@ run entirely in your browser.
      chargers, even if that means an extra stop.
    - **Extra buffer** — more conservative: decides you need a stop while
      you still have ~20% range left, rather than cutting it close.
+   - **Family-friendly stops** — only appears if you checked any "Prefer
+     stops near" boxes in the form (restaurant/playground/restroom/shop).
+     Same idea as "Fewest stops", but at each step it checks a handful of
+     the reachable chargers (furthest first) against Overpass and picks the
+     first one that has *all* your checked amenities nearby. If none of
+     the ones it checks qualify, it falls back to a normal stop there
+     rather than leaving a gap — the plan tells you which stops matched.
+     This one takes a moment longer to appear than the other 3, since it
+     has to look each candidate up rather than just doing math.
 
    Pick a plan box to see that plan's stops as big numbered pins on the map,
    plus a written stop-by-stop plan above it (miles into the trip, miles
@@ -116,6 +125,12 @@ you're ready — just say the word.
   public resource with light rate limits, similar to Nominatim — fine for
   occasional personal use, but the lookup can occasionally be slow or fail;
   if it does, the popup just says so rather than retrying automatically.
+- **"Family-friendly stops" only checks a handful of candidates per stop**
+  (up to 6, furthest-reachable first), not every charger near the route —
+  checking all of them would mean dozens of extra Overpass lookups per
+  search, which isn't a good trade against the free service's rate limits.
+  In practice this means it usually finds a match quickly if one exists
+  nearby, but it isn't an exhaustive search.
 
 ## Natural next steps (V3 ideas — not built yet)
 
