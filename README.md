@@ -1,10 +1,11 @@
 # EV Charger Route Planner (V1)
 
 A simple webpage: opens centered on you (with permission) and your start
-location pre-filled, like a normal navigation app. Type a destination and
-see your driving route with nearby EV chargers plotted on a map. Enter your
-car's range and it becomes a route-planning advisor: it works out the fewest
-charging stops needed to actually complete the trip and marks them on the map.
+location pre-filled, like a normal navigation app. Type a destination, pick
+one of a few route options, and see EV chargers plotted along it. Enter your
+car's range and it becomes a route-planning advisor: pick from a few
+charging-plan strategies, each showing the stops needed to actually complete
+the trip.
 
 ## What's in this project
 
@@ -25,24 +26,30 @@ run entirely in your browser.
    it). If you say no, or your device doesn't support it, the app just
    quietly falls back to a default world view and you type a start location
    yourself — that's a normal outcome, not an error.
-1. **You type** a start (or use the pre-filled one) and a destination.
+1. **You type** a start (or use the pre-filled one) and a destination, then
+   click "Find Routes".
 2. **Nominatim** (OpenStreetMap's free search) turns that text into map
-   coordinates.
-3. **OSRM** (a free routing service) turns two coordinates into an actual
-   driving route.
-4. **Leaflet** draws the map and the route line, using free **OpenStreetMap**
-   map tiles.
-5. **Open Charge Map** is asked "what chargers are in the area around this
-   route?" and each one gets a pin.
-6. Each pin is **colored by charging speed or plug type** (whichever you pick
+   coordinates, and **OSRM** (a free routing service) finds a few genuinely
+   different route options between them (however many it can find — often
+   1-3) — each shown as a clickable box with its drive time and distance.
+3. **You pick a route box.** That route draws on the map (via **Leaflet**
+   and free **OpenStreetMap** map tiles), and **Open Charge Map** is asked
+   "what chargers are near this route?" — each one gets a pin.
+4. Each pin is **colored by charging speed or plug type** (whichever you pick
    with the toggle above the map) — a legend explains what the colors mean.
    Click any pin for the full details: address and every connector it has.
-7. **If you entered a range**, the app plans your trip: starting from your
-   full range, it repeatedly jumps to the furthest charger that's still
-   reachable, "recharges" there, and repeats until the destination is within
-   reach. Those chosen chargers get big numbered pins and a written
-   stop-by-stop plan above the map — the fewest stops possible for your
-   range, on this route.
+5. **If you entered a range**, a second row of boxes appears — 2-3 charging
+   *strategies* for that specific route:
+   - **Fewest stops** — jumps to the furthest reachable charger each time,
+     "recharges" fully, and repeats. Minimizes how many times you stop.
+   - **Fastest chargers** — same idea, but only considers rapid (100kW+)
+     chargers, even if that means an extra stop.
+   - **Extra buffer** — more conservative: decides you need a stop while
+     you still have ~20% range left, rather than cutting it close.
+
+   Pick a plan box to see that plan's stops as big numbered pins on the map,
+   plus a written stop-by-stop plan above it (miles into the trip, miles
+   since the last stop, and how much range you'll have left at the end).
 
 None of these services require you to sign up or pay for V1 — they're all
 free, public APIs meant for exactly this kind of light personal use.

@@ -1,15 +1,19 @@
 /*
  * EV Charger Route Planner — V1
  *
- * What this file does, in order, every time you click "Find Route & Chargers":
- *   1. Turn the start/destination text you typed into map coordinates (geocoding).
- *   2. Ask a free routing service for driving directions between those two points.
- *   3. Draw that route as a line on the map.
- *   4. Ask Open Charge Map for EV chargers near that route.
- *   4b. If you entered a car range, work out the fewest charging stops
- *       needed to actually complete the trip (the "advisor").
- *   5. Drop a pin on the map for each charger found (plan stops get a big
- *      numbered pin; everything else gets a small colored dot).
+ * What this file does, in order:
+ *   1. Click "Find Routes": turn the start/destination text into map
+ *      coordinates (geocoding), then ask a free routing service for a
+ *      few different route options between them.
+ *   2. Those options show up as clickable boxes (drive time + distance).
+ *      Pick one.
+ *   3. That route is drawn on the map, and Open Charge Map is asked for
+ *      EV chargers near it.
+ *   4. If you entered a car range, a second row of boxes appears offering
+ *      a few different charging-plan strategies for that route (the
+ *      "advisor") — pick one to see its stops on the map and a written
+ *      stop-by-stop plan. Plan stops get a big numbered pin; every other
+ *      nearby charger gets a small colored dot.
  *
  * No server, no login, no database — everything happens right here in the browser.
  */
@@ -50,10 +54,25 @@ let colorMode = "speed"; // "speed" or "plug"
 let planMarkers = [];
 let currentPlanStopIds = new Set();
 
+// Route-options and plan-options state (the two rows of clickable boxes).
+// A search finds up to a few different routes; picking one finds chargers
+// and (if you gave a range) a few different charging-plan strategies for
+// that specific route.
+let currentRoutes = [];
+let selectedRouteIndex = -1;
+let hasRangeForSearch = false;
+let rangeMilesForSearch = 0;
+let planStrategies = [];
+let selectedPlanKey = null;
+
 const form = document.getElementById("trip-form");
 const startInput = document.getElementById("start");
 const statusEl = document.getElementById("status");
 const findBtn = document.getElementById("find-btn");
+const routePickerEl = document.getElementById("route-picker");
+const routeOptionsEl = document.getElementById("route-options");
+const planPickerEl = document.getElementById("plan-picker");
+const planOptionsEl = document.getElementById("plan-options");
 const planEl = document.getElementById("plan");
 const planContentEl = document.getElementById("plan-content");
 const legendEl = document.getElementById("legend");
@@ -127,12 +146,17 @@ form.addEventListener("submit", async (event) => {
   const startText = document.getElementById("start").value.trim();
   const destText = document.getElementById("destination").value.trim();
   const rangeValue = parseFloat(document.getElementById("range").value);
-  const hasRange = Number.isFinite(rangeValue) && rangeValue > 0;
+  hasRangeForSearch = Number.isFinite(rangeValue) && rangeValue > 0;
+  rangeMilesForSearch = rangeValue;
 
   setLoading(true);
   clearMap();
+  routePickerEl.hidden = true;
+  planPickerEl.hidden = true;
   legendEl.hidden = true;
   planEl.hidden = true;
+  selectedRouteIndex = -1;
+  selectedPlanKey = null;
 
   try {
     // Step 1: turn addresses into coordinates
@@ -142,40 +166,18 @@ form.addEventListener("submit", async (event) => {
     setStatus(`Looking up "${destText}"...`);
     const destCoord = await geocode(destText);
 
-    // Step 2 + 3: get the driving route and draw it
-    setStatus("Calculating route...");
-    const route = await getRoute(startCoord, destCoord);
-    drawRoute(route);
+    // Step 2: find a few different route options between them
+    setStatus("Calculating route options...");
+    currentRoutes = await getRoutes(startCoord, destCoord);
 
-    // Step 4: find chargers near the route
-    setStatus("Finding EV chargers near your route...");
-    const chargers = await getChargersNearRoute(route);
-    lastChargers = chargers;
-
-    // Step 4b: if a range was given, work out which chargers to actually
-    // stop at, and mark them so Step 5 doesn't draw a plain pin for the
-    // same charger too.
-    if (hasRange) {
-      setStatus("Planning charging stops for your trip...");
-      const planResult = planChargingStops(chargers, route, rangeValue);
-      currentPlanStopIds = new Set(planResult.stops.map((s) => s.charger.ID));
-      drawPlanStops(planResult.stops);
-      renderPlan(planResult);
-    }
-
-    // Step 5: draw pins for the remaining (non-stop) chargers
-    drawChargers(chargers);
-
-    if (chargers.length === 0) {
-      setStatus(
-        "Route found, but no chargers turned up nearby. Try a different route or zoom out to look around."
-      );
-      legendEl.hidden = true;
-    } else {
-      setStatus(`Found ${chargers.length} charger${chargers.length === 1 ? "" : "s"} near your route.`);
-      legendEl.hidden = false;
-      renderLegend();
-    }
+    // Steps 3-5 (draw route, find chargers, plan charging) happen once you
+    // click one of the route boxes — see selectRoute() below.
+    renderRouteOptions(currentRoutes);
+    setStatus(
+      currentRoutes.length > 1
+        ? `Found ${currentRoutes.length} route options — pick one below.`
+        : "Found a route — select it below to continue."
+    );
   } catch (err) {
     console.error(err);
     setStatus(err.message || "Something went wrong. Please try again.", true);
@@ -183,6 +185,84 @@ form.addEventListener("submit", async (event) => {
     setLoading(false);
   }
 });
+
+// Runs once you click one of the route boxes: draws that route, finds
+// chargers near it, and (if you gave a range) works out charging-plan
+// options for it.
+async function selectRoute(index) {
+  selectedRouteIndex = index;
+  markSelectedCard(routeOptionsEl, (_, i) => i === index);
+
+  const route = currentRoutes[index];
+
+  clearMap(); // wipes any route/chargers/plan pins from a previously picked route
+  planPickerEl.hidden = true;
+  planEl.hidden = true;
+  legendEl.hidden = true;
+  selectedPlanKey = null;
+
+  drawRoute(route);
+  setLoading(true);
+
+  try {
+    // Step 4: find chargers near the route
+    setStatus("Finding EV chargers near this route...");
+    const chargers = await getChargersNearRoute(route);
+    lastChargers = chargers;
+
+    // Step 4b: if a range was given, work out a few different charging-plan
+    // strategies and let the plan-picker boxes handle drawing pins for
+    // whichever one is selected (starting with the first, "Fewest stops").
+    if (hasRangeForSearch) {
+      setStatus("Working out charging plan options...");
+      planStrategies = buildPlanStrategies(chargers, route, rangeMilesForSearch);
+      renderPlanOptions(planStrategies);
+      selectPlanStrategy(planStrategies[0].key);
+    } else {
+      // Step 5: no range given, so just draw every nearby charger.
+      drawChargers(chargers);
+    }
+
+    if (chargers.length === 0) {
+      setStatus("Route found, but no chargers turned up nearby. Try a different route option.");
+    } else {
+      setStatus(`Found ${chargers.length} charger${chargers.length === 1 ? "" : "s"} near this route.`);
+      legendEl.hidden = false;
+      renderLegend();
+    }
+  } catch (err) {
+    console.error(err);
+    setStatus(err.message || "Something went wrong finding chargers. Please try again.", true);
+  } finally {
+    setLoading(false);
+  }
+}
+
+// Runs when you click one of the plan-strategy boxes: swaps which set of
+// stops is drawn on the map and described in the written plan below.
+function selectPlanStrategy(key) {
+  selectedPlanKey = key;
+  markSelectedCard(planOptionsEl, (child) => child.dataset.planKey === key);
+
+  const strategy = planStrategies.find((s) => s.key === key);
+  if (!strategy) return;
+
+  planMarkers.forEach((m) => map.removeLayer(m));
+  planMarkers = [];
+  currentPlanStopIds = new Set(strategy.result.stops.map((s) => s.charger.ID));
+
+  drawPlanStops(strategy.result.stops);
+  renderPlan(strategy.result);
+  redrawChargerMarkers(); // regular charger dots must skip whichever chargers are now "stops"
+}
+
+// Toggles a "selected" look onto whichever card in a picker matches, and
+// clears it from the rest. matchFn(cardElement, index) => true/false.
+function markSelectedCard(container, matchFn) {
+  Array.from(container.children).forEach((child, i) => {
+    child.classList.toggle("selected", matchFn(child, i));
+  });
+}
 
 // ---- Step 1: Geocoding (address text -> coordinates) ----------------------
 // Uses Nominatim, OpenStreetMap's free search service. No API key required,
@@ -208,14 +288,16 @@ async function geocode(placeText) {
   };
 }
 
-// ---- Step 2: Routing (two coordinates -> a driving route) -----------------
-// Uses OSRM's free public demo server. It's meant for testing/light use —
-// if this app ever gets serious traffic, swap this for a paid routing service.
-async function getRoute(startCoord, destCoord) {
+// ---- Step 2: Routing (two coordinates -> a few driving route options) -----
+// Uses OSRM's free public demo server, asking for alternative routes as well
+// as the fastest one. Routing services only ever find a handful of genuinely
+// different paths between two points — sometimes just one — so however many
+// come back is however many route boxes get shown (capped at 3).
+async function getRoutes(startCoord, destCoord) {
   const url =
     `https://router.project-osrm.org/route/v1/driving/` +
     `${startCoord.lon},${startCoord.lat};${destCoord.lon},${destCoord.lat}` +
-    `?overview=full&geometries=geojson`;
+    `?overview=full&geometries=geojson&alternatives=true`;
 
   const response = await fetch(url);
   if (!response.ok) {
@@ -227,16 +309,51 @@ async function getRoute(startCoord, destCoord) {
     throw new Error("No driving route could be found between those two places.");
   }
 
-  // GeoJSON coordinates come as [lon, lat] pairs; Leaflet wants [lat, lon].
-  const coordinates = data.routes[0].geometry.coordinates.map(([lon, lat]) => [lat, lon]);
+  const routes = data.routes.map((r) => ({
+    // GeoJSON coordinates come as [lon, lat] pairs; Leaflet wants [lat, lon].
+    coordinates: r.geometry.coordinates.map(([lon, lat]) => [lat, lon]),
+    distanceMeters: r.distance,
+    durationSeconds: r.duration,
+  }));
 
-  return {
-    coordinates,
-    distanceMeters: data.routes[0].distance,
-  };
+  routes.sort((a, b) => a.durationSeconds - b.durationSeconds);
+  return routes.slice(0, 3);
 }
 
-// ---- Step 3: Draw the route on the map -------------------------------------
+// Fills in the route-picker boxes: one per route option, showing drive time
+// and distance, fastest first.
+function renderRouteOptions(routes) {
+  routeOptionsEl.innerHTML = "";
+
+  routes.forEach((route, i) => {
+    const btn = document.createElement("button");
+    btn.type = "button";
+    btn.className = "option-card";
+    btn.innerHTML = `
+      <div class="option-title">${i === 0 ? "Fastest" : `Route ${i + 1}`}</div>
+      <div class="option-detail">${formatDuration(route.durationSeconds)} · ${formatMiles(
+        route.distanceMeters
+      )}</div>
+    `;
+    btn.addEventListener("click", () => selectRoute(i));
+    routeOptionsEl.appendChild(btn);
+  });
+
+  routePickerEl.hidden = false;
+}
+
+function formatDuration(seconds) {
+  const totalMinutes = Math.round(seconds / 60);
+  const hours = Math.floor(totalMinutes / 60);
+  const minutes = totalMinutes % 60;
+  return hours > 0 ? `${hours}h ${minutes}m` : `${minutes}m`;
+}
+
+function formatMiles(meters) {
+  return `${Math.round(meters * MILES_PER_METER)} mi`;
+}
+
+// ---- Step 3: Draw the selected route on the map -----------------------------
 function drawRoute(route) {
   routeLayer = L.polyline(route.coordinates, { color: "#1a73e8", weight: 5 }).addTo(map);
   map.fitBounds(routeLayer.getBounds(), { padding: [40, 40] });
@@ -389,7 +506,13 @@ function locateChargerOnRoute(charger, routeIndex) {
   };
 }
 
-function planChargingStops(chargers, route, rangeMiles) {
+// reachRangeMiles is the range used to decide when a stop is needed —
+// normally your real range, but the "Extra buffer" strategy passes in a
+// reduced number here so it stops sooner/more often. trueRangeMiles is
+// always your *real* range, used only to work out actual remaining range
+// at the destination (a full recharge always gives you the real range back,
+// regardless of how conservatively the stop timing was decided).
+function planChargingStops(chargers, route, reachRangeMiles, trueRangeMiles = reachRangeMiles) {
   const routeIndex = buildRouteIndex(route);
   const totalMiles = routeIndex[routeIndex.length - 1].cumMiles;
 
@@ -403,9 +526,9 @@ function planChargingStops(chargers, route, rangeMiles) {
   let reachable = true;
   let stuckAtMiles = null;
 
-  while (position + rangeMiles < totalMiles) {
+  while (position + reachRangeMiles < totalMiles) {
     const inReach = candidates.filter(
-      (c) => c.milesAlongRoute > position && c.milesAlongRoute <= position + rangeMiles
+      (c) => c.milesAlongRoute > position && c.milesAlongRoute <= position + reachRangeMiles
     );
 
     if (inReach.length === 0) {
@@ -424,20 +547,67 @@ function planChargingStops(chargers, route, rangeMiles) {
   return {
     stops,
     totalMiles,
-    rangeMiles,
     reachable,
     stuckAtMiles,
-    spareMiles: reachable ? position + rangeMiles - totalMiles : null,
+    spareMiles: reachable ? position + trueRangeMiles - totalMiles : null,
   };
 }
 
+// The 3 charging-plan strategies offered as plan-picker boxes. All 3 reuse
+// the exact same planning function above — they just feed it different
+// charger lists or a different (temporarily reduced) range.
+const BUFFER_SAFETY_MARGIN = 0.8; // "Extra buffer" plans as if only 80% of range is usable per leg
+
+function buildPlanStrategies(chargers, route, rangeMiles) {
+  const rapidOnly = chargers.filter((c) => getSpeedCategory(c).key === "rapid");
+
+  return [
+    { key: "fewest", label: "Fewest stops", result: planChargingStops(chargers, route, rangeMiles) },
+    { key: "fastest", label: "Fastest chargers", result: planChargingStops(rapidOnly, route, rangeMiles) },
+    {
+      key: "buffer",
+      label: "Extra buffer",
+      result: planChargingStops(chargers, route, rangeMiles * BUFFER_SAFETY_MARGIN, rangeMiles),
+    },
+  ];
+}
+
+// Fills in the plan-picker boxes: one per strategy, showing how many stops
+// it needs (or that it isn't fully possible on this route).
+function renderPlanOptions(strategies) {
+  planOptionsEl.innerHTML = "";
+
+  strategies.forEach((strategy) => {
+    const btn = document.createElement("button");
+    btn.type = "button";
+    btn.className = "option-card";
+    btn.dataset.planKey = strategy.key;
+
+    const stopCount = strategy.result.stops.length;
+    const detail = !strategy.result.reachable
+      ? "Not fully possible on this route"
+      : stopCount === 0
+      ? "No stops needed"
+      : `${stopCount} stop${stopCount === 1 ? "" : "s"}`;
+
+    btn.innerHTML = `
+      <div class="option-title">${escapeHtml(strategy.label)}</div>
+      <div class="option-detail">${escapeHtml(detail)}</div>
+    `;
+    btn.addEventListener("click", () => selectPlanStrategy(strategy.key));
+    planOptionsEl.appendChild(btn);
+  });
+
+  planPickerEl.hidden = false;
+}
+
 function renderPlan(planResult) {
-  const { stops, totalMiles, rangeMiles, reachable, stuckAtMiles, spareMiles } = planResult;
+  const { stops, totalMiles, reachable, stuckAtMiles, spareMiles } = planResult;
 
   if (stops.length === 0 && reachable) {
-    planContentEl.innerHTML = `<p>Your ${rangeMiles}-mile range covers this whole ~${Math.round(
+    planContentEl.innerHTML = `<p>This plan needs no charging stops — you can complete the ~${Math.round(
       totalMiles
-    )}-mile trip — no charging stops needed! 🎉</p>`;
+    )}-mile trip on your current charge! 🎉</p>`;
     planEl.hidden = false;
     return;
   }
@@ -651,7 +821,7 @@ function setStatus(message, isError = false) {
 
 function setLoading(isLoading) {
   findBtn.disabled = isLoading;
-  findBtn.textContent = isLoading ? "Working..." : "Find Route & Chargers";
+  findBtn.textContent = isLoading ? "Working..." : "Find Routes";
 }
 
 function escapeHtml(str) {

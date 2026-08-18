@@ -35,14 +35,27 @@
       <input id="range" type="number" min="1" placeholder="e.g. 250" />
     </div>
 
-    <button type="submit" id="find-btn">Find Route &amp; Chargers</button>
+    <button type="submit" id="find-btn">Find Routes</button>
   </form>
 
   <!-- Status messages: "Loading...", errors, etc. -->
   <p id="status" role="status"></p>
 
-  <!-- Shown when you enter a car range: the specific charging stops needed
-       to complete the trip, worked out from your range. -->
+  <!-- Shown after route lookup: 2-3 route options as clickable boxes,
+       each showing drive time and distance. Pick one to see it on the map. -->
+  <div id="route-picker" class="picker" hidden>
+    <h2>Choose a route</h2>
+    <div id="route-options" class="option-grid"></div>
+  </div>
+
+  <!-- Shown once a route is picked and you entered a car range: 2-3
+       charging-plan strategies as clickable boxes for that route. -->
+  <div id="plan-picker" class="picker" hidden>
+    <h2>Choose a charging plan</h2>
+    <div id="plan-options" class="option-grid"></div>
+  </div>
+
+  <!-- The written stop-by-stop detail for whichever plan box is selected. -->
   <div id="plan" class="plan" hidden>
     <h2>⚡ Charging plan</h2>
     <div id="plan-content"></div>

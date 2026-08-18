@@ -89,6 +89,61 @@ header h1 {
   font-weight: 600;
 }
 
+/* The route-picker and plan-picker boxes ("choose a route" / "choose a
+   charging plan"), plus the individual clickable cards inside them. */
+.picker {
+  max-width: 900px;
+  margin: 0 auto 0.75rem;
+}
+
+.picker h2 {
+  margin: 0 0 0.5rem;
+  font-size: 0.9rem;
+  font-weight: 600;
+  color: #444;
+  text-align: center;
+}
+
+.option-grid {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.6rem;
+  justify-content: center;
+}
+
+.option-card {
+  min-width: 150px;
+  max-width: 220px;
+  padding: 0.6rem 0.9rem;
+  background: white;
+  border: 2px solid #d8d8d8;
+  border-radius: 10px;
+  cursor: pointer;
+  text-align: left;
+  font: inherit;
+}
+
+.option-card:hover {
+  border-color: #90b8f5;
+}
+
+.option-card.selected {
+  border-color: #1a73e8;
+  background: #eaf2fe;
+}
+
+.option-title {
+  font-weight: 700;
+  font-size: 0.9rem;
+  color: #1a1a1a;
+  margin-bottom: 0.2rem;
+}
+
+.option-detail {
+  font-size: 0.8rem;
+  color: #555;
+}
+
 /* The charging plan panel, shown when a car range is entered */
 .plan {
   max-width: 900px;
