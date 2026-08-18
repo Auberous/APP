@@ -38,9 +38,10 @@ L.tileLayer("https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png", {
   attribution: "&copy; OpenStreetMap contributors",
 }).addTo(map);
 
-// We'll keep track of the current route line and charger pins so we can
-// remove them before drawing a new search.
-let routeLayer = null;
+// We'll keep track of the route lines and charger pins so we can remove
+// them before drawing a new search. routeLayers holds one line per route
+// option, same order as currentRoutes, so they can be restyled in place.
+let routeLayers = [];
 let chargerMarkers = [];
 
 // The most recent set of chargers found, kept around so switching the
@@ -150,7 +151,7 @@ form.addEventListener("submit", async (event) => {
   rangeMilesForSearch = rangeValue;
 
   setLoading(true);
-  clearMap();
+  clearEverything();
   routePickerEl.hidden = true;
   planPickerEl.hidden = true;
   legendEl.hidden = true;
@@ -170,9 +171,12 @@ form.addEventListener("submit", async (event) => {
     setStatus("Calculating route options...");
     currentRoutes = await getRoutes(startCoord, destCoord);
 
-    // Steps 3-5 (draw route, find chargers, plan charging) happen once you
-    // click one of the route boxes — see selectRoute() below.
+    // Step 3: preview every route option on the map right away (fastest in
+    // blue, alternates in grey, like a normal map app), zoomed to fit them
+    // all. Finding chargers/planning (steps 4-5) waits for you to actually
+    // pick one — see selectRoute() below.
     renderRouteOptions(currentRoutes);
+    drawRouteOptions(currentRoutes);
     setStatus(
       currentRoutes.length > 1
         ? `Found ${currentRoutes.length} route options — pick one below.`
@@ -186,8 +190,8 @@ form.addEventListener("submit", async (event) => {
   }
 });
 
-// Runs once you click one of the route boxes: draws that route, finds
-// chargers near it, and (if you gave a range) works out charging-plan
+// Runs once you click one of the route boxes: highlights that route line,
+// finds chargers near it, and (if you gave a range) works out charging-plan
 // options for it.
 async function selectRoute(index) {
   selectedRouteIndex = index;
@@ -195,13 +199,18 @@ async function selectRoute(index) {
 
   const route = currentRoutes[index];
 
-  clearMap(); // wipes any route/chargers/plan pins from a previously picked route
+  // The picked route's line goes bold blue; every other option's line
+  // becomes grey, whether or not it was the "fastest" one shown by default.
+  routeLayers.forEach((layer, i) => layer.setStyle(routeLineStyle(i === index)));
+  routeLayers[index].bringToFront();
+  map.fitBounds(routeLayers[index].getBounds(), { padding: [40, 40] });
+
+  clearChargersAndPlan(); // wipes chargers/plan pins from a previously picked route
   planPickerEl.hidden = true;
   planEl.hidden = true;
   legendEl.hidden = true;
   selectedPlanKey = null;
 
-  drawRoute(route);
   setLoading(true);
 
   try {
@@ -353,10 +362,21 @@ function formatMiles(meters) {
   return `${Math.round(meters * MILES_PER_METER)} mi`;
 }
 
-// ---- Step 3: Draw the selected route on the map -----------------------------
-function drawRoute(route) {
-  routeLayer = L.polyline(route.coordinates, { color: "#1a73e8", weight: 5 }).addTo(map);
-  map.fitBounds(routeLayer.getBounds(), { padding: [40, 40] });
+// ---- Step 3: Draw every route option on the map, like a normal map app ----
+// The fastest option starts highlighted in blue and the rest in grey, all
+// visible at once and zoomed to fit — selectRoute() re-styles them once you
+// actually pick one.
+function drawRouteOptions(routes) {
+  routeLayers = routes.map((route, i) => L.polyline(route.coordinates, routeLineStyle(i === 0)).addTo(map));
+
+  const allPoints = routes.flatMap((route) => route.coordinates);
+  map.fitBounds(L.latLngBounds(allPoints), { padding: [40, 40] });
+}
+
+function routeLineStyle(isHighlighted) {
+  return isHighlighted
+    ? { color: "#1a73e8", weight: 6, opacity: 0.95 }
+    : { color: "#9e9e9e", weight: 4, opacity: 0.7 };
 }
 
 // ---- Step 4: Find chargers near the route ----------------------------------
@@ -802,16 +822,24 @@ function renderLegend() {
 }
 
 // ---- Helpers ----------------------------------------------------------------
-function clearMap() {
-  if (routeLayer) {
-    map.removeLayer(routeLayer);
-    routeLayer = null;
-  }
+
+// Removes just the charger and plan pins — used when switching between
+// route options, since the route lines themselves should stay put (just
+// restyled) rather than disappear and redraw.
+function clearChargersAndPlan() {
   chargerMarkers.forEach((m) => map.removeLayer(m));
   chargerMarkers = [];
   planMarkers.forEach((m) => map.removeLayer(m));
   planMarkers = [];
   currentPlanStopIds = new Set();
+}
+
+// Wipes the whole map — route lines included — used at the start of a
+// brand-new search.
+function clearEverything() {
+  routeLayers.forEach((l) => map.removeLayer(l));
+  routeLayers = [];
+  clearChargersAndPlan();
 }
 
 function setStatus(message, isError = false) {

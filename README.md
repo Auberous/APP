@@ -32,8 +32,11 @@ run entirely in your browser.
    coordinates, and **OSRM** (a free routing service) finds a few genuinely
    different route options between them (however many it can find — often
    1-3) — each shown as a clickable box with its drive time and distance.
-3. **You pick a route box.** That route draws on the map (via **Leaflet**
-   and free **OpenStreetMap** map tiles), and **Open Charge Map** is asked
+   All of them draw on the map right away too (via **Leaflet** and free
+   **OpenStreetMap** map tiles), zoomed to fit — fastest in blue, the rest
+   in grey, like a normal map app.
+3. **You pick a route box.** That route's line turns bold blue (others fade
+   to grey) and the map zooms to it, then **Open Charge Map** is asked
    "what chargers are near this route?" — each one gets a pin.
 4. Each pin is **colored by charging speed or plug type** (whichever you pick
    with the toggle above the map) — a legend explains what the colors mean.
