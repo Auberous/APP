@@ -1,0 +1,78 @@
+# EV Charger Route Planner (V1)
+
+A simple webpage: type a start location and destination, and see your driving
+route with nearby EV chargers plotted on a map. Optionally enter your car's
+range (not used for calculations yet in V1 — see "What's next" below).
+
+## What's in this project
+
+| File | What it does |
+|---|---|
+| `index.html` | The page structure — the form and the map area. |
+| `style.css` | How things look. |
+| `app.js` | The logic — looks up locations, gets a route, fetches chargers, draws pins. |
+
+No installs, no build step, no server, no login. It's three plain files that
+run entirely in your browser.
+
+## How the pieces fit together
+
+1. **You type** a start and destination.
+2. **Nominatim** (OpenStreetMap's free search) turns that text into map
+   coordinates.
+3. **OSRM** (a free routing service) turns two coordinates into an actual
+   driving route.
+4. **Leaflet** draws the map and the route line, using free **OpenStreetMap**
+   map tiles.
+5. **Open Charge Map** is asked "what chargers are in the area around this
+   route?" and each one gets a pin.
+
+None of these services require you to sign up or pay for V1 — they're all
+free, public APIs meant for exactly this kind of light personal use.
+
+## How to try it out
+
+**Easiest: just open the file.**
+Double-click `index.html` and it'll open in your browser. This works in most
+browsers, but a couple of browsers restrict background network requests when
+a page is opened directly from disk (rather than a real web address). If the
+map loads but searching doesn't work, use the local server option below.
+
+**More reliable: run a tiny local server.**
+If you have Python installed (most Macs do by default), open a terminal in
+this folder and run:
+
+```
+python3 -m http.server 8000
+```
+
+Then visit `http://localhost:8000` in your browser.
+
+**Putting it online for real (free): GitHub Pages.**
+Since this code lives in a GitHub repo already, GitHub can host it for free
+at a public URL, no server needed. In the repo's Settings → Pages, set the
+source to your branch and `/ (root)`. GitHub will give you a URL like
+`https://yourusername.github.io/APP/`. I can walk you through this step when
+you're ready — just say the word.
+
+## Known V1 limitations (on purpose, to keep things simple)
+
+- **Range isn't used yet.** You can enter your car's range, but the app
+  doesn't yet check whether a charger is actually reachable or plan
+  charging stops. It just shows chargers in the general area of your route.
+- **"Near the route" is approximate.** It draws a box around your whole
+  route (with some padding) and shows chargers inside that box — not a
+  precise "chargers exactly on this road" search.
+- **No API key required, but rate limits are light.** For a single person
+  using this occasionally, that's fine. If usage grows, get a free Open
+  Charge Map key (see the comment at the top of `app.js`) and consider a
+  paid/self-hosted routing service instead of the public OSRM demo server.
+
+## Natural next steps (V2 ideas — not built yet)
+
+- Use range to actually filter to chargers you could reach, and plan stops.
+- Show distance/time to each charger from the route.
+- Filter chargers by connector type or charging speed.
+- Save/share a planned trip (would need some form of backend + accounts).
+
+We can tackle these one at a time once V1 feels solid.

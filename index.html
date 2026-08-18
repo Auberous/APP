@@ -1,0 +1,51 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>EV Charger Route Planner</title>
+
+  <!-- Leaflet's stylesheet. Leaflet is the free library that draws the map. -->
+  <link
+    rel="stylesheet"
+    href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css"
+  />
+  <link rel="stylesheet" href="style.css" />
+</head>
+<body>
+  <header>
+    <h1>⚡ EV Charger Route Planner</h1>
+    <p class="subtitle">Enter a start and destination to see EV chargers along your route.</p>
+  </header>
+
+  <!-- The form where you type your trip details -->
+  <form id="trip-form">
+    <div class="field">
+      <label for="start">Start location</label>
+      <input id="start" type="text" placeholder="e.g. Austin, TX" required />
+    </div>
+
+    <div class="field">
+      <label for="destination">Destination</label>
+      <input id="destination" type="text" placeholder="e.g. Dallas, TX" required />
+    </div>
+
+    <div class="field">
+      <label for="range">Car range in miles (optional)</label>
+      <input id="range" type="number" min="1" placeholder="e.g. 250" />
+    </div>
+
+    <button type="submit" id="find-btn">Find Route &amp; Chargers</button>
+  </form>
+
+  <!-- Status messages: "Loading...", errors, etc. -->
+  <p id="status" role="status"></p>
+
+  <!-- The map itself gets drawn inside this div by Leaflet -->
+  <div id="map"></div>
+
+  <!-- Leaflet's JavaScript library -->
+  <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+  <script src="app.js"></script>
+</body>
+</html>
