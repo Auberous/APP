@@ -1,9 +1,10 @@
 # EV Charger Route Planner (V1)
 
-A simple webpage: type a start location and destination, and see your driving
-route with nearby EV chargers plotted on a map. Enter your car's range and
-it becomes a route-planning advisor: it works out the fewest charging stops
-needed to actually complete the trip and marks them on the map.
+A simple webpage: opens centered on you (with permission) and your start
+location pre-filled, like a normal navigation app. Type a destination and
+see your driving route with nearby EV chargers plotted on a map. Enter your
+car's range and it becomes a route-planning advisor: it works out the fewest
+charging stops needed to actually complete the trip and marks them on the map.
 
 ## What's in this project
 
@@ -18,7 +19,13 @@ run entirely in your browser.
 
 ## How the pieces fit together
 
-1. **You type** a start and destination.
+0. **On load**, the app asks your browser for permission to use your
+   location. If you allow it, the map flies to where you are and "Start
+   location" is pre-filled with a short place name (you can still overwrite
+   it). If you say no, or your device doesn't support it, the app just
+   quietly falls back to a default world view and you type a start location
+   yourself — that's a normal outcome, not an error.
+1. **You type** a start (or use the pre-filled one) and a destination.
 2. **Nominatim** (OpenStreetMap's free search) turns that text into map
    coordinates.
 3. **OSRM** (a free routing service) turns two coordinates into an actual

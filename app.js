@@ -22,7 +22,9 @@
 const OCM_API_KEY = "73d5a487-00e9-40c6-b804-6210f537899b";
 
 // ---- Set up the map --------------------------------------------------------
-// Centered roughly on the middle of the US by default, zoomed out.
+// Starts zoomed out on a rough world view so the map isn't blank while we
+// wait on the location permission prompt below — initUserLocation() flies
+// it to your actual location as soon as (and if) you allow that.
 const map = L.map("map").setView([39.5, -98.35], 4);
 
 // The map "tiles" (the actual picture of streets/land) come from OpenStreetMap,
@@ -49,6 +51,7 @@ let planMarkers = [];
 let currentPlanStopIds = new Set();
 
 const form = document.getElementById("trip-form");
+const startInput = document.getElementById("start");
 const statusEl = document.getElementById("status");
 const findBtn = document.getElementById("find-btn");
 const planEl = document.getElementById("plan");
@@ -57,6 +60,55 @@ const legendEl = document.getElementById("legend");
 const legendItemsEl = document.getElementById("legend-items");
 const modeSpeedBtn = document.getElementById("mode-speed-btn");
 const modePlugBtn = document.getElementById("mode-plug-btn");
+
+// ---- Find the user and start there, like Google Maps does -----------------
+// On load, ask the browser for permission to use your location. If you say
+// yes, the map flies to you instead of sitting on a default world view, and
+// "Start location" is pre-filled with a short place name for where you are
+// (you can still overwrite it to start from somewhere else). If you say no,
+// or your browser/device doesn't support this, the app just quietly falls
+// back to the default view — that's a normal choice, not an error.
+function initUserLocation() {
+  if (!("geolocation" in navigator)) return;
+
+  navigator.geolocation.getCurrentPosition(
+    async (position) => {
+      const { latitude, longitude } = position.coords;
+      map.flyTo([latitude, longitude], 11);
+
+      try {
+        startInput.value = await reverseGeocode(latitude, longitude);
+      } catch (err) {
+        console.error(err);
+        startInput.value = "My Location";
+      }
+    },
+    (err) => {
+      console.info("Location not available:", err.message);
+      setStatus("Type a start location below, or allow location access next time to skip that step.");
+    },
+    { timeout: 8000 }
+  );
+}
+
+// Turns coordinates into a short, human-friendly place name (e.g.
+// "Bundeena, New South Wales") using Nominatim's free reverse-geocoding —
+// the same free service used for the forward lookups elsewhere in this file.
+async function reverseGeocode(lat, lon) {
+  const url = `https://nominatim.openstreetmap.org/reverse?format=json&lat=${lat}&lon=${lon}`;
+  const response = await fetch(url);
+  if (!response.ok) throw new Error("Reverse geocoding failed");
+
+  const data = await response.json();
+  const addr = data.address || {};
+  const place = addr.suburb || addr.neighbourhood || addr.village || addr.town || addr.city || addr.county;
+  const region = addr.state || addr.country;
+  const label = [place, region].filter(Boolean).join(", ");
+
+  return label || data.display_name || "My Location";
+}
+
+initUserLocation();
 
 modeSpeedBtn.addEventListener("click", () => setColorMode("speed"));
 modePlugBtn.addEventListener("click", () => setColorMode("plug"));
