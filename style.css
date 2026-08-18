@@ -98,6 +98,22 @@ header h1 {
   cursor: pointer;
 }
 
+.amenity-distance-row {
+  display: flex;
+  align-items: center;
+  gap: 0.4rem;
+  font-size: 0.85rem;
+  color: #333;
+}
+
+.amenity-distance-row input {
+  width: 80px;
+  padding: 0.35rem 0.5rem;
+  border: 1px solid #ccc;
+  border-radius: 6px;
+  font-size: 0.9rem;
+}
+
 #find-btn {
   padding: 0.6rem 1.1rem;
   background: #1a73e8;

@@ -10,7 +10,7 @@
     rel="stylesheet"
     href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css"
   />
-  <link rel="stylesheet" href="style.css?v=5" />
+  <link rel="stylesheet" href="style.css?v=6" />
 </head>
 <body>
   <header>
@@ -44,10 +44,18 @@
     <div class="field">
       <label>Prefer stops near (optional)</label>
       <div class="amenity-checks">
-        <label class="amenity-check"><input type="checkbox" value="restaurant" /> 🍔 Restaurant</label>
+        <label class="amenity-check"><input type="checkbox" value="restaurant" /> 🍔 Restaurant/Cafe</label>
         <label class="amenity-check"><input type="checkbox" value="playground" /> 🧒 Playground</label>
         <label class="amenity-check"><input type="checkbox" value="restroom" /> 🚻 Restroom</label>
         <label class="amenity-check"><input type="checkbox" value="shop" /> 🛒 Shop</label>
+      </div>
+      <div class="amenity-distance-row">
+        <span>within</span>
+        <input id="amenity-distance" type="number" min="50" max="3000" step="50" value="400" />
+        <div class="unit-toggle">
+          <button type="button" id="amenity-unit-m-btn" class="toggle-btn" aria-pressed="true">m</button>
+          <button type="button" id="amenity-unit-ft-btn" class="toggle-btn" aria-pressed="false">ft</button>
+        </div>
       </div>
     </div>
 
@@ -93,6 +101,6 @@
 
   <!-- Leaflet's JavaScript library -->
   <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
-  <script src="app.js?v=5"></script>
+  <script src="app.js?v=6"></script>
 </body>
 </html>

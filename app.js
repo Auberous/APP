@@ -80,6 +80,9 @@ const rangeLabelEl = document.getElementById("range-label");
 const unitMiBtn = document.getElementById("unit-mi-btn");
 const unitKmBtn = document.getElementById("unit-km-btn");
 const amenityCheckboxes = document.querySelectorAll('.amenity-check input[type="checkbox"]');
+const amenityDistanceInput = document.getElementById("amenity-distance");
+const amenityUnitMBtn = document.getElementById("amenity-unit-m-btn");
+const amenityUnitFtBtn = document.getElementById("amenity-unit-ft-btn");
 const statusEl = document.getElementById("status");
 const findBtn = document.getElementById("find-btn");
 const routePickerEl = document.getElementById("route-picker");
@@ -127,6 +130,22 @@ function formatDistanceFromMeters(meters) {
 
 function formatDistanceFromMiles(miles) {
   return distanceUnit === "km" ? `${Math.round(miles * KM_PER_MILE)} km` : `${Math.round(miles)} mi`;
+}
+
+// The "within ___ of these amenities" distance — separate from the mi/km
+// trip-range toggle above since this one is a short, walking-scale distance
+// (meters/feet suit it better than miles/km). Read at submit time into
+// amenityDistanceMetersForSearch, which every amenity lookup uses.
+let amenityDistanceUnit = "m"; // "m" or "ft"
+let amenityDistanceMetersForSearch = 400; // overwritten on submit; matches the form's default
+
+amenityUnitMBtn.addEventListener("click", () => setAmenityDistanceUnit("m"));
+amenityUnitFtBtn.addEventListener("click", () => setAmenityDistanceUnit("ft"));
+
+function setAmenityDistanceUnit(unit) {
+  amenityDistanceUnit = unit;
+  amenityUnitMBtn.setAttribute("aria-pressed", String(unit === "m"));
+  amenityUnitFtBtn.setAttribute("aria-pressed", String(unit === "ft"));
 }
 
 // ---- Find the user and start there, like Google Maps does -----------------
@@ -202,6 +221,14 @@ form.addEventListener("submit", async (event) => {
   preferredAmenitiesForSearch = Array.from(amenityCheckboxes)
     .filter((cb) => cb.checked)
     .map((cb) => cb.value);
+
+  const amenityDistanceValue = parseFloat(amenityDistanceInput.value);
+  amenityDistanceMetersForSearch =
+    Number.isFinite(amenityDistanceValue) && amenityDistanceValue > 0
+      ? amenityDistanceUnit === "ft"
+        ? amenityDistanceValue / 3.28084
+        : amenityDistanceValue
+      : 400; // fall back to the default if left blank/invalid
 
   setLoading(true);
   clearEverything();
@@ -739,7 +766,8 @@ async function candidateMatchesAmenities(charger, preferredAmenities) {
     try {
       charger._amenityInfo = await fetchNearbyAmenities(
         charger.AddressInfo.Latitude,
-        charger.AddressInfo.Longitude
+        charger.AddressInfo.Longitude,
+        amenityDistanceMetersForSearch
       );
     } catch (err) {
       console.error("Amenity check failed for a candidate charger:", err);
@@ -999,10 +1027,9 @@ function buildPopupHtml(charger, note) {
 // fetched lazily — only when you actually open a charger's popup, and only
 // once per charger (the result is cached on the charger object itself so
 // reopening the same popup later doesn't fetch it again).
-const AMENITY_SEARCH_RADIUS_METERS = 400; // roughly a quarter mile — walkable during a charging stop
 const AMENITY_LIST_LIMIT = 3; // don't overwhelm the popup — nearest few per category
 const AMENITY_TYPES = [
-  { key: "restaurant", icon: "🍔", label: "Restaurant", plural: "Restaurants" },
+  { key: "restaurant", icon: "🍔", label: "Restaurant/Cafe", plural: "Restaurants/Cafes" },
   { key: "playground", icon: "🧒", label: "Playground", plural: "Playgrounds" },
   { key: "restroom", icon: "🚻", label: "Restroom", plural: "Restrooms" },
   { key: "shop", icon: "🛒", label: "Shop", plural: "Shops" },
@@ -1013,12 +1040,14 @@ async function loadNearbyAmenities(marker, charger) {
 
   // charger._amenityInfo may already be cached — either from a previous
   // popup open, or from the "Family-friendly stops" plan strategy having
-  // already checked this exact charger while building its plan.
+  // already checked this exact charger while building its plan. Either way
+  // it was checked using the "within" distance set at search time.
   if (!charger._amenityInfo) {
     try {
       charger._amenityInfo = await fetchNearbyAmenities(
         charger.AddressInfo.Latitude,
-        charger.AddressInfo.Longitude
+        charger.AddressInfo.Longitude,
+        amenityDistanceMetersForSearch
       );
     } catch (err) {
       console.error("Overpass amenity lookup failed:", err);
@@ -1035,14 +1064,14 @@ async function loadNearbyAmenities(marker, charger) {
   if (el) el.innerHTML = renderAmenitiesHtml(charger._amenityInfo);
 }
 
-async function fetchNearbyAmenities(lat, lon) {
+async function fetchNearbyAmenities(lat, lon, radiusMeters) {
   const query = `
     [out:json][timeout:15];
     (
-      node["amenity"~"^(restaurant|cafe|fast_food)$"](around:${AMENITY_SEARCH_RADIUS_METERS},${lat},${lon});
-      node["leisure"="playground"](around:${AMENITY_SEARCH_RADIUS_METERS},${lat},${lon});
-      node["amenity"="toilets"](around:${AMENITY_SEARCH_RADIUS_METERS},${lat},${lon});
-      node["shop"~"^(supermarket|convenience)$"](around:${AMENITY_SEARCH_RADIUS_METERS},${lat},${lon});
+      node["amenity"~"^(restaurant|cafe|fast_food)$"](around:${radiusMeters},${lat},${lon});
+      node["leisure"="playground"](around:${radiusMeters},${lat},${lon});
+      node["amenity"="toilets"](around:${radiusMeters},${lat},${lon});
+      node["shop"~"^(supermarket|convenience)$"](around:${radiusMeters},${lat},${lon});
     );
     out body;
   `;
@@ -1099,7 +1128,7 @@ function formatWalkingDistance(meters) {
 function renderAmenitiesHtml(info) {
   const groups = AMENITY_TYPES.filter((a) => info[a.key].count > 0);
   if (groups.length === 0) {
-    return "Nothing nearby found (within ~1/4 mile)";
+    return `Nothing found within ${formatWalkingDistance(amenityDistanceMetersForSearch)}`;
   }
 
   return groups

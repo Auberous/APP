@@ -43,13 +43,13 @@ run entirely in your browser.
 4. Each pin is **colored by charging speed or plug type** (whichever you pick
    with the toggle above the map) — a legend explains what the colors mean.
    Click any pin for the full details: address, every connector it has, and
-   what's within about a quarter mile — named restaurants, playgrounds,
-   restrooms, and supermarkets/shops, each with its walking distance from
-   the charger (e.g. "McDonald's — 350 ft"), fetched from OpenStreetMap's
-   free **Overpass** service the moment you open that pin's popup (only
-   once per charger; reopening the same popup later doesn't re-fetch it).
-   Only the 3 nearest per category are listed, with a "+N more" note if
-   there are others.
+   what's nearby — named restaurants/cafes, playgrounds, restrooms, and
+   supermarkets/shops within the distance you set in the form (400m by
+   default), each with its walking distance from the charger (e.g.
+   "McDonald's — 350 ft"), fetched from OpenStreetMap's free **Overpass**
+   service the moment you open that pin's popup (only once per charger;
+   reopening the same popup later doesn't re-fetch it). Only the 3 nearest
+   per category are listed, with a "+N more" note if there are others.
 5. **If you entered a range**, a second row of boxes appears — charging
    *strategies* for that specific route:
    - **Fewest stops** — jumps to the furthest reachable charger each time,
@@ -59,7 +59,9 @@ run entirely in your browser.
    - **Extra buffer** — more conservative: decides you need a stop while
      you still have ~20% range left, rather than cutting it close.
    - **Family-friendly stops** — only appears if you checked any "Prefer
-     stops near" boxes in the form (restaurant/playground/restroom/shop).
+     stops near" boxes in the form (restaurant/cafe, playground, restroom,
+     shop) and set how far counts as "near" (400m by default — the same
+     distance field also controls the popup's "what's nearby" section).
      Same idea as "Fewest stops", but at each step it checks a handful of
      the reachable chargers (furthest first) against Overpass and picks the
      first one that has *all* your checked amenities nearby. If none of
