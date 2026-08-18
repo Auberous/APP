@@ -735,9 +735,9 @@ async function buildFamilyStrategy(chargers, route, rangeMiles, preferredAmeniti
 // else in the app. A failed lookup counts as "no match" rather than
 // stopping the whole plan.
 async function candidateMatchesAmenities(charger, preferredAmenities) {
-  if (!charger._amenityCounts) {
+  if (!charger._amenityInfo) {
     try {
-      charger._amenityCounts = await fetchNearbyAmenities(
+      charger._amenityInfo = await fetchNearbyAmenities(
         charger.AddressInfo.Latitude,
         charger.AddressInfo.Longitude
       );
@@ -746,7 +746,7 @@ async function candidateMatchesAmenities(charger, preferredAmenities) {
       return false;
     }
   }
-  return preferredAmenities.every((key) => charger._amenityCounts[key] > 0);
+  return preferredAmenities.every((key) => charger._amenityInfo[key].count > 0);
 }
 
 // Fills in the plan-picker boxes: one per strategy, showing how many stops
@@ -987,40 +987,42 @@ function buildPopupHtml(charger, note) {
         <span class="badge" style="background:${plug.color}">${escapeHtml(plug.label)}</span>
       </div>
       <p class="connector-list">${escapeHtml(connectionSummary)}</p>
-      <p class="amenities-line">🔍 Checking what's nearby…</p>
+      <div class="amenities-block">🔍 Checking what's nearby…</div>
     </div>
   `;
 }
 
-// ---- "What's nearby" — restaurants, playgrounds, restrooms, shops --------
+// ---- "What's nearby" — named restaurants, playgrounds, restrooms, shops,
+// with walking distance from the charger ------------------------------------
 // Open Charge Map doesn't know about any of this; it comes from a separate
 // free service, Overpass (a query tool for OpenStreetMap's data). This is
 // fetched lazily — only when you actually open a charger's popup, and only
 // once per charger (the result is cached on the charger object itself so
 // reopening the same popup later doesn't fetch it again).
 const AMENITY_SEARCH_RADIUS_METERS = 400; // roughly a quarter mile — walkable during a charging stop
+const AMENITY_LIST_LIMIT = 3; // don't overwhelm the popup — nearest few per category
 const AMENITY_TYPES = [
-  { key: "restaurant", icon: "🍔", label: "restaurant" },
-  { key: "playground", icon: "🧒", label: "playground" },
-  { key: "restroom", icon: "🚻", label: "restroom" },
-  { key: "shop", icon: "🛒", label: "shop" },
+  { key: "restaurant", icon: "🍔", label: "Restaurant", plural: "Restaurants" },
+  { key: "playground", icon: "🧒", label: "Playground", plural: "Playgrounds" },
+  { key: "restroom", icon: "🚻", label: "Restroom", plural: "Restrooms" },
+  { key: "shop", icon: "🛒", label: "Shop", plural: "Shops" },
 ];
 
 async function loadNearbyAmenities(marker, charger) {
-  const getPlaceholder = () => marker.getPopup()?.getElement()?.querySelector(".amenities-line");
+  const getBlock = () => marker.getPopup()?.getElement()?.querySelector(".amenities-block");
 
-  // charger._amenityCounts may already be cached — either from a previous
+  // charger._amenityInfo may already be cached — either from a previous
   // popup open, or from the "Family-friendly stops" plan strategy having
   // already checked this exact charger while building its plan.
-  if (!charger._amenityCounts) {
+  if (!charger._amenityInfo) {
     try {
-      charger._amenityCounts = await fetchNearbyAmenities(
+      charger._amenityInfo = await fetchNearbyAmenities(
         charger.AddressInfo.Latitude,
         charger.AddressInfo.Longitude
       );
     } catch (err) {
       console.error("Overpass amenity lookup failed:", err);
-      const el = getPlaceholder();
+      const el = getBlock();
       if (el) el.textContent = "Couldn't check what's nearby right now.";
       return;
     }
@@ -1029,8 +1031,8 @@ async function loadNearbyAmenities(marker, charger) {
   // The popup may have been closed (or a different one opened) while the
   // fetch was in flight, so re-find the element fresh rather than reuse
   // a stale reference from before the await.
-  const el = getPlaceholder();
-  if (el) el.textContent = summarizeAmenities(charger._amenityCounts);
+  const el = getBlock();
+  if (el) el.innerHTML = renderAmenitiesHtml(charger._amenityInfo);
 }
 
 async function fetchNearbyAmenities(lat, lon) {
@@ -1042,7 +1044,7 @@ async function fetchNearbyAmenities(lat, lon) {
       node["amenity"="toilets"](around:${AMENITY_SEARCH_RADIUS_METERS},${lat},${lon});
       node["shop"~"^(supermarket|convenience)$"](around:${AMENITY_SEARCH_RADIUS_METERS},${lat},${lon});
     );
-    out tags;
+    out body;
   `;
 
   const response = await fetch("https://overpass-api.de/api/interpreter", {
@@ -1054,25 +1056,73 @@ async function fetchNearbyAmenities(lat, lon) {
   }
 
   const data = await response.json();
-  const counts = { restaurant: 0, playground: 0, restroom: 0, shop: 0 };
+  const origin = L.latLng(lat, lon);
+
+  // One growable list per category first, so we can sort by distance and
+  // keep only the nearest few before returning.
+  const found = { restaurant: [], playground: [], restroom: [], shop: [] };
 
   (data.elements || []).forEach((el) => {
     const tags = el.tags || {};
-    if (["restaurant", "cafe", "fast_food"].includes(tags.amenity)) counts.restaurant++;
-    else if (tags.leisure === "playground") counts.playground++;
-    else if (tags.amenity === "toilets") counts.restroom++;
-    else if (["supermarket", "convenience"].includes(tags.shop)) counts.shop++;
+    let key = null;
+    if (["restaurant", "cafe", "fast_food"].includes(tags.amenity)) key = "restaurant";
+    else if (tags.leisure === "playground") key = "playground";
+    else if (tags.amenity === "toilets") key = "restroom";
+    else if (["supermarket", "convenience"].includes(tags.shop)) key = "shop";
+    if (!key || el.lat == null || el.lon == null) return;
+
+    found[key].push({
+      name: tags.name || null,
+      distanceMeters: origin.distanceTo(L.latLng(el.lat, el.lon)),
+    });
   });
 
-  return counts;
+  const result = {};
+  Object.keys(found).forEach((key) => {
+    const sorted = found[key].sort((a, b) => a.distanceMeters - b.distanceMeters);
+    result[key] = { count: sorted.length, items: sorted.slice(0, AMENITY_LIST_LIMIT) };
+  });
+  return result;
 }
 
-function summarizeAmenities(counts) {
-  const parts = AMENITY_TYPES.filter((a) => counts[a.key] > 0).map(
-    (a) => `${a.icon} ${counts[a.key]} ${a.label}${counts[a.key] === 1 ? "" : "s"}`
-  );
+// Distances here are short (under half a mile), so this shows them the way
+// walking directions normally do — feet/meters up close, mi/km once it's
+// far enough that the round number stops looking silly.
+function formatWalkingDistance(meters) {
+  if (distanceUnit === "km") {
+    return meters < 1000 ? `${Math.round(meters)} m` : `${(meters / 1000).toFixed(1)} km`;
+  }
+  const feet = meters * 3.28084;
+  return feet < 528 ? `${Math.round(feet)} ft` : `${(meters * MILES_PER_METER).toFixed(1)} mi`;
+}
 
-  return parts.length > 0 ? parts.join(" · ") : "Nothing nearby found (within ~1/4 mile)";
+function renderAmenitiesHtml(info) {
+  const groups = AMENITY_TYPES.filter((a) => info[a.key].count > 0);
+  if (groups.length === 0) {
+    return "Nothing nearby found (within ~1/4 mile)";
+  }
+
+  return groups
+    .map((a) => {
+      const { count, items } = info[a.key];
+      const itemLines = items
+        .map(
+          (item) =>
+            `<li>${escapeHtml(item.name || `Unnamed ${a.label.toLowerCase()}`)} — ${formatWalkingDistance(
+              item.distanceMeters
+            )}</li>`
+        )
+        .join("");
+      const more = count > items.length ? `<li class="amenities-more">+${count - items.length} more</li>` : "";
+
+      return `
+        <div class="amenities-group">
+          <div class="amenities-group-title">${a.icon} ${escapeHtml(count === 1 ? a.label : a.plural)}</div>
+          <ul>${itemLines}${more}</ul>
+        </div>
+      `;
+    })
+    .join("");
 }
 
 // Builds a colored circular pin (a lightning bolt on a colored disc) for a

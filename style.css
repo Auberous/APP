@@ -352,10 +352,39 @@ header h1 {
   margin: 0.1rem 0 0.35rem;
 }
 
-.charger-popup .amenities-line {
+.charger-popup .amenities-block {
   margin-top: 0.4rem;
   padding-top: 0.4rem;
   border-top: 1px solid #eee;
   font-size: 0.8rem;
   color: #444;
+  max-width: 240px;
+}
+
+.amenities-group {
+  margin-bottom: 0.4rem;
+}
+
+.amenities-group:last-child {
+  margin-bottom: 0;
+}
+
+.amenities-group-title {
+  font-weight: 700;
+  color: #333;
+  margin-bottom: 0.1rem;
+}
+
+.amenities-group ul {
+  margin: 0;
+  padding-left: 1.1rem;
+}
+
+.amenities-group li {
+  margin: 0.05rem 0;
+}
+
+.amenities-more {
+  color: #888;
+  font-style: italic;
 }
