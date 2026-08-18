@@ -89,6 +89,56 @@ header h1 {
   font-weight: 600;
 }
 
+/* The charging plan panel, shown when a car range is entered */
+.plan {
+  max-width: 900px;
+  margin: 0 auto 0.75rem;
+  padding: 0.75rem 1rem;
+  background: #eef7ee;
+  border: 1px solid #a5d6a7;
+  border-radius: 8px;
+}
+
+.plan h2 {
+  margin: 0 0 0.4rem;
+  font-size: 1rem;
+  color: #2e7d32;
+}
+
+.plan ol {
+  margin: 0 0 0.5rem;
+  padding-left: 1.3rem;
+}
+
+.plan li {
+  margin: 0.25rem 0;
+  font-size: 0.9rem;
+  color: #333;
+}
+
+.plan-warning {
+  color: #c62828;
+  font-weight: 600;
+  margin: 0.3rem 0 0;
+}
+
+/* The numbered pins for recommended charging stops (distinct from the
+   regular colored dots so the plan stands out on the map). */
+.stop-div-icon span {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 30px;
+  height: 30px;
+  border-radius: 50%;
+  background: #2e7d32;
+  color: white;
+  font-weight: 700;
+  font-size: 14px;
+  border: 3px solid white;
+  box-shadow: 0 1px 4px rgba(0, 0, 0, 0.5);
+}
+
 /* The "color pins by" toggle + legend, shown above the map once chargers load */
 .legend {
   max-width: 900px;
@@ -197,4 +247,10 @@ header h1 {
 .charger-popup .connector-list {
   margin-top: 0.35rem;
   color: #555;
+}
+
+.charger-popup .stop-note {
+  color: #2e7d32;
+  font-weight: 700;
+  margin: 0.1rem 0 0.35rem;
 }

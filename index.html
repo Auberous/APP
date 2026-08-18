@@ -41,6 +41,13 @@
   <!-- Status messages: "Loading...", errors, etc. -->
   <p id="status" role="status"></p>
 
+  <!-- Shown when you enter a car range: the specific charging stops needed
+       to complete the trip, worked out from your range. -->
+  <div id="plan" class="plan" hidden>
+    <h2>⚡ Charging plan</h2>
+    <div id="plan-content"></div>
+  </div>
+
   <!-- Shown once chargers are found: lets you switch what the pin colors mean,
        and explains what each color is. Hidden until there are results. -->
   <div id="legend" class="legend" hidden>
