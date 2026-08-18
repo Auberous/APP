@@ -60,9 +60,10 @@ you're ready — just say the word.
 - **Range isn't used yet.** You can enter your car's range, but the app
   doesn't yet check whether a charger is actually reachable or plan
   charging stops. It just shows chargers in the general area of your route.
-- **"Near the route" is approximate.** It draws a box around your whole
-  route (with some padding) and shows chargers inside that box — not a
-  precise "chargers exactly on this road" search.
+- **"Near the route" is approximate.** It samples points every ~40 miles
+  along your route and shows chargers within 25 miles of each one — close
+  to the actual road, but not a precise "chargers exactly on this road"
+  search.
 - **No API key required, but rate limits are light.** For a single person
   using this occasionally, that's fine. If usage grows, get a free Open
   Charge Map key (see the comment at the top of `app.js`) and consider a

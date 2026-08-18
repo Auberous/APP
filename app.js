@@ -139,33 +139,89 @@ function drawRoute(route) {
 }
 
 // ---- Step 4: Find chargers near the route ----------------------------------
-// V1 keeps this simple: draw a box around the whole route (with a little
-// padding) and ask Open Charge Map for every charger inside that box.
-// It doesn't yet check whether a charger is exactly "on the way" or whether
-// it's within your car's range — that's a good V2 improvement.
+// V1 keeps the *logic* simple (no range/reachability planning yet), but the
+// search itself walks the actual route: we drop sample points every ~40
+// miles along the line and ask Open Charge Map for chargers within a radius
+// of each one, then combine the results. This uses Open Charge Map's most
+// standard "point + radius" search, which is more reliable than a single
+// big rectangle around a long, winding route.
+const MILES_PER_METER = 1 / 1609.34;
+const SAMPLE_SPACING_MILES = 40;
+const SEARCH_RADIUS_MILES = 25;
+const MAX_SAMPLE_POINTS = 12;
+
 async function getChargersNearRoute(route) {
-  const bounds = routeLayer.getBounds();
-  const pad = 0.3; // ~20 miles of extra padding in degrees, rough but fine for V1
+  const samplePoints = pickSamplePoints(route);
 
-  const north = bounds.getNorth() + pad;
-  const south = bounds.getSouth() - pad;
-  const east = bounds.getEast() + pad;
-  const west = bounds.getWest() - pad;
+  const requests = samplePoints.map((point) => fetchChargersNear(point));
+  const results = await Promise.allSettled(requests);
 
+  const chargersById = new Map();
+  let anySucceeded = false;
+
+  results.forEach((result) => {
+    if (result.status === "fulfilled") {
+      anySucceeded = true;
+      result.value.forEach((charger) => chargersById.set(charger.ID, charger));
+    } else {
+      console.error("Open Charge Map request failed:", result.reason);
+    }
+  });
+
+  if (!anySucceeded) {
+    // Every single request failed — surface the actual reason from the first
+    // failure so it's possible to tell "no internet", "rate limited", etc. apart.
+    const firstFailure = results.find((r) => r.status === "rejected");
+    throw new Error(
+      `Could not reach Open Charge Map: ${firstFailure.reason.message}. Please try again.`
+    );
+  }
+
+  return Array.from(chargersById.values());
+}
+
+// Picks evenly-spaced points along the route line, roughly one every
+// SAMPLE_SPACING_MILES, capped at MAX_SAMPLE_POINTS so we don't fire off an
+// unreasonable number of requests for very long trips.
+function pickSamplePoints(route) {
+  const distanceMiles = route.distanceMeters * MILES_PER_METER;
+  const desiredCount = Math.ceil(distanceMiles / SAMPLE_SPACING_MILES) + 1;
+  const count = Math.min(Math.max(desiredCount, 2), MAX_SAMPLE_POINTS);
+
+  const coords = route.coordinates;
+  const points = [];
+  for (let i = 0; i < count; i++) {
+    const index = Math.round((i * (coords.length - 1)) / (count - 1));
+    const [lat, lon] = coords[index];
+    points.push({ lat, lon });
+  }
+  return points;
+}
+
+async function fetchChargersNear(point) {
   const params = new URLSearchParams({
     output: "json",
     compact: "true",
     verbose: "false",
-    maxresults: "200",
-    boundingbox: `(${north},${west}),(${south},${east})`,
+    maxresults: "100",
+    latitude: String(point.lat),
+    longitude: String(point.lon),
+    distance: String(SEARCH_RADIUS_MILES),
+    distanceunit: "miles",
   });
   if (OCM_API_KEY) params.set("key", OCM_API_KEY);
 
   const url = `https://api.openchargemap.io/v3/poi/?${params.toString()}`;
 
-  const response = await fetch(url);
+  let response;
+  try {
+    response = await fetch(url);
+  } catch (networkErr) {
+    throw new Error("network error reaching Open Charge Map");
+  }
+
   if (!response.ok) {
-    throw new Error("Could not reach Open Charge Map. Please try again.");
+    throw new Error(`Open Charge Map returned an error (HTTP ${response.status})`);
   }
 
   return response.json();
