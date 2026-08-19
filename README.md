@@ -75,17 +75,33 @@ run entirely in your browser.
      chargers, even if that means an extra stop.
    - **Extra buffer** — more conservative: decides you need a stop while
      you still have ~20% range left, rather than cutting it close.
-   - **Family-friendly stops** — only appears if you checked any "Prefer
-     stops near" boxes in the form (food, playground, restroom, shop) and
-     set how far counts as "near" (100m by default — the same distance
-     field also controls the popup's "what's nearby" section).
-     Same idea as "Fewest stops", but at each step it checks a handful of
-     the reachable chargers (furthest first) against Overpass and picks the
-     first one that has *all* your checked amenities nearby. If none of
-     the ones it checks qualify, it falls back to a normal stop there
-     rather than leaving a gap — the plan tells you which stops matched.
-     This one takes a moment longer to appear than the other 3, since it
-     has to look each candidate up rather than just doing math.
+   - **Family-friendly stops** (and up to 2 more boxes alongside it) — only
+     appears if you checked any "Prefer stops near" boxes in the form (food,
+     playground, restroom, shop) and set how far counts as "near" (100m by
+     default — the same distance field also controls the popup's "what's
+     nearby" section). Same idea as "Fewest stops", but at each step it
+     checks a handful of the reachable chargers (furthest first) against
+     Overpass and picks the first one that has *all* your checked amenities
+     nearby.
+     - **"Family-friendly stops"** uses your exact typed distance (100m by
+       default). If a match exists that close everywhere on the route,
+       this is the only one of these boxes you'll see.
+     - If it can't find a match that close for every stop, a 2nd box
+       appears — **"Family-friendly (up to ~500m)"** (5x your typed
+       distance) — the same search, just allowed to look further before
+       giving up on a stop.
+     - If that still can't match everywhere, a 3rd box appears —
+       **"Family-friendly (best within ~2km)"** (20x your typed distance,
+       capped at 5km total either way) — one more, wider attempt.
+     Whichever box(es) you see, if none of the checked candidates qualify
+     at that box's distance, it falls back to a normal stop there rather
+     than leaving a gap — the written plan tells you which stops matched
+     and, for a match, exactly how close ("✅ matched within 350 ft").
+     These boxes take a moment longer to appear than the other 3, since
+     each has to look candidates up rather than just doing math — but
+     looking up a second, wider distance for the same charger never means
+     a second network request; it re-checks data already fetched (see the
+     limitations below).
 
    Pick a plan box to see that plan's stops as big numbered pins on the map,
    plus a written stop-by-stop plan above it. Each stop shows a compact row
@@ -187,7 +203,17 @@ you're ready — just say the word.
   checking all of them would mean dozens of extra Overpass lookups per
   search, which isn't a good trade against the free service's rate limits.
   In practice this means it usually finds a match quickly if one exists
-  nearby, but it isn't an exhaustive search.
+  nearby, but it isn't an exhaustive search. This applies to each of the
+  distance tiers (see above) independently — a wider tier still only
+  checks the same handful of candidates, just with a more forgiving
+  distance, so it's not guaranteed to find a match either even if one
+  technically exists further down the list of reachable chargers.
+- **The 3 "Family-friendly" distance tiers are fixed multiples** (1x, 5x,
+  20x your typed "within" distance, capped at 5km total) — not something
+  you can currently set yourself. They're one Overpass fetch per charger
+  either way (at the widest radius any tier might need), so trying a wider
+  tier for a charger already checked at a narrower one is instant, not a
+  new network request.
 - **Chain/brand matching is a name search, not a verified database** — it
   matches whatever OpenStreetMap has in a place's "name" tag, so a
   misspelled or unusually-formatted listing could be missed, and it doesn't
