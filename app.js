@@ -1340,7 +1340,7 @@ function buildPopupHtml(charger, note) {
 // reopening the same popup later doesn't fetch it again).
 const AMENITY_LIST_LIMIT = 3; // don't overwhelm the popup — nearest few per category
 const AMENITY_TYPES = [
-  { key: "restaurant", icon: "🍔", label: "Restaurant/Cafe", plural: "Restaurants/Cafes" },
+  { key: "restaurant", icon: "🍔", label: "Food", plural: "Food" },
   { key: "playground", icon: "🧒", label: "Playground", plural: "Playgrounds" },
   { key: "restroom", icon: "🚻", label: "Restroom", plural: "Restrooms" },
   { key: "shop", icon: "🛒", label: "Shop", plural: "Shops" },

@@ -70,9 +70,9 @@ run entirely in your browser.
    - **Extra buffer** — more conservative: decides you need a stop while
      you still have ~20% range left, rather than cutting it close.
    - **Family-friendly stops** — only appears if you checked any "Prefer
-     stops near" boxes in the form (restaurant/cafe, playground, restroom,
-     shop) and set how far counts as "near" (100m by default — the same
-     distance field also controls the popup's "what's nearby" section).
+     stops near" boxes in the form (food, playground, restroom, shop) and
+     set how far counts as "near" (100m by default — the same distance
+     field also controls the popup's "what's nearby" section).
      Same idea as "Fewest stops", but at each step it checks a handful of
      the reachable chargers (furthest first) against Overpass and picks the
      first one that has *all* your checked amenities nearby. If none of
@@ -91,9 +91,9 @@ run entirely in your browser.
    popups, shown inline here too). Drive/charge times are estimates from
    the route's overall average speed and a rough EV efficiency assumption,
    not real per-segment predictions — see the limitations below.
-6. **Checking "Restaurant/Cafe" or "Shop" reveals a brand-picker panel**
-   underneath it — pick particular chains/brands to narrow that category
-   down to just those, instead of any restaurant/cafe or any shop. Shops
+6. **Checking "Food" or "Shop" reveals a brand-picker panel** underneath
+   it — pick particular chains/brands to narrow that category down to
+   just those, instead of any restaurant/cafe or any shop. Shops
    are grouped into two tiers: **Quick stop** (supermarkets/convenience —
    Coles, Woolworths, 7-Eleven, etc.) and **Bigger break** (department/
    variety stores — Kmart, Target, Big W, etc.) — pick from either or both,

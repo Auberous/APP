@@ -48,14 +48,14 @@
     <div class="field">
       <label>Prefer stops near (optional)</label>
       <div class="amenity-checks">
-        <label class="amenity-check"><input type="checkbox" id="amenity-restaurant" value="restaurant" /> 🍔 Restaurant/Cafe</label>
+        <label class="amenity-check"><input type="checkbox" id="amenity-restaurant" value="restaurant" /> 🍔 Food</label>
         <label class="amenity-check"><input type="checkbox" value="playground" /> 🧒 Playground</label>
         <label class="amenity-check"><input type="checkbox" value="restroom" /> 🚻 Restroom</label>
         <label class="amenity-check"><input type="checkbox" id="amenity-shop" value="shop" /> 🛒 Shop</label>
       </div>
 
-      <!-- Shown only when "Restaurant/Cafe" above is checked: pick specific
-           chains to narrow the search to, instead of any restaurant/cafe.
+      <!-- Shown only when "Food" above is checked: pick specific chains to
+           narrow the search to, instead of any restaurant/cafe.
            Which chains are listed depends on the detected country. -->
       <div id="chain-picker" class="chain-picker" hidden>
         <span class="chain-picker-label">Specific chains (optional):</span>
@@ -131,6 +131,6 @@
   <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
   <!-- The brand lists behind the "specific chains"/"specific shops" pickers, by country. -->
   <script src="brandLists.js?v=3"></script>
-  <script src="app.js?v=13"></script>
+  <script src="app.js?v=14"></script>
 </body>
 </html>
