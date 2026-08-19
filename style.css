@@ -284,6 +284,57 @@ header h1 {
   color: #333;
 }
 
+/* The richer per-stop layout: header line, a row of small stat chips
+   (drive/charge/wait/remaining), then a compact "what's nearby" block. */
+.plan ol.stop-list {
+  list-style: none;
+  padding-left: 0;
+}
+
+.plan .stop-item {
+  margin: 0 0 0.7rem;
+  padding-bottom: 0.6rem;
+  border-bottom: 1px solid #cfe3cf;
+}
+
+.plan .stop-item:last-child {
+  border-bottom: none;
+  margin-bottom: 0.3rem;
+  padding-bottom: 0;
+}
+
+.stop-header {
+  margin-bottom: 0.35rem;
+}
+
+.stop-stats {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.35rem 0.5rem;
+  margin-bottom: 0.4rem;
+}
+
+.stat {
+  font-size: 0.76rem;
+  background: white;
+  border: 1px solid #cfe3cf;
+  border-radius: 5px;
+  padding: 0.15rem 0.5rem;
+  color: #333;
+  white-space: nowrap;
+}
+
+.stat-label {
+  font-weight: 700;
+  color: #2e7d32;
+  margin-right: 0.35rem;
+}
+
+.stop-amenities {
+  font-size: 0.78rem;
+  color: #444;
+}
+
 .plan-warning {
   color: #c62828;
   font-weight: 600;

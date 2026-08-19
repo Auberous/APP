@@ -72,8 +72,15 @@ run entirely in your browser.
      has to look each candidate up rather than just doing math.
 
    Pick a plan box to see that plan's stops as big numbered pins on the map,
-   plus a written stop-by-stop plan above it (miles into the trip, miles
-   since the last stop, and how much range you'll have left at the end).
+   plus a written stop-by-stop plan above it. Each stop shows a compact row
+   of stats — **Drive** (time + distance for that leg), **Charge**
+   (estimated, from the leg's distance and the charger's top speed), **Wait**
+   (always "Unknown" — Open Charge Map has no live wait-time data), and
+   **To destination** (time + distance remaining) — plus its own "what's
+   nearby" list (same named-amenities-with-walking-distance info as the map
+   popups, shown inline here too). Drive/charge times are estimates from
+   the route's overall average speed and a rough EV efficiency assumption,
+   not real per-segment predictions — see the limitations below.
 6. **Checking "Restaurant/Cafe" or "Shop" reveals a brand-picker panel**
    underneath it — pick particular chains/brands to narrow that category
    down to just those, instead of any restaurant/cafe or any shop. Shops
@@ -165,6 +172,24 @@ you're ready — just say the word.
   the "Bigger break" tier's brands (Kmart, Target, etc.) actually use. This
   slightly broadens what counts as "shop" everywhere, not just when brands
   are picked.
+- **Drive/charge/remaining-time stats on each stop are estimates, not real
+  predictions.** Drive and remaining time both use the route's *overall*
+  average speed (total OSRM time ÷ total distance) applied to that leg's
+  distance — a highway-heavy leg will actually be faster than this, a
+  town-heavy one slower. Charge time assumes a flat ~3.5 mi/kWh efficiency
+  and a linear charge rate at the charger's listed maximum speed — real
+  charging tapers off (especially past ~80%) and real efficiency varies a
+  lot by vehicle. Wait time is always "Unknown" — Open Charge Map is a
+  static directory, not a live occupancy feed, so there's nothing to show.
+- **Selecting a plan now fetches "what's nearby" for every one of its
+  stops**, not just when you click a pin — for a typical 2-4 stop plan
+  that's a few extra Overpass requests each time you pick or switch plans.
+  Results are cached per charger (shared with the map popups), so revisiting
+  the same plan or clicking a pin already shown in it is instant.
+- **Debugging the amenity/brand search:** open the browser console (F12 →
+  Console) — every amenity lookup logs the radius, the chain/shop brand
+  list actually used, the raw Overpass query, and the counts that came
+  back, so it's possible to see exactly what was searched for.
 
 ## Natural next steps (V3 ideas — not built yet)
 

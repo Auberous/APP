@@ -741,6 +741,16 @@ function buildCandidates(chargers, routeIndex) {
 // always your *real* range, used only to work out actual remaining range
 // at the destination (a full recharge always gives you the real range back,
 // regardless of how conservatively the stop timing was decided).
+// A rough average speed for the whole route (from OSRM's own time/distance
+// for it), used to turn "how far into the trip" a stop is into "how long
+// it'll take to get there" — an estimate, not a real per-segment timing.
+function estimateAvgMph(route) {
+  if (!route.durationSeconds) return null;
+  const miles = route.distanceMeters * MILES_PER_METER;
+  const hours = route.durationSeconds / 3600;
+  return hours > 0 ? miles / hours : null;
+}
+
 function planChargingStops(chargers, route, reachRangeMiles, trueRangeMiles = reachRangeMiles) {
   const routeIndex = buildRouteIndex(route);
   const totalMiles = routeIndex[routeIndex.length - 1].cumMiles;
@@ -775,6 +785,7 @@ function planChargingStops(chargers, route, reachRangeMiles, trueRangeMiles = re
     reachable,
     stuckAtMiles,
     spareMiles: reachable ? position + trueRangeMiles - totalMiles : null,
+    avgMph: estimateAvgMph(route),
   };
 }
 
@@ -858,6 +869,7 @@ async function buildFamilyStrategy(chargers, route, rangeMiles, preferredAmeniti
       reachable,
       stuckAtMiles,
       spareMiles: reachable ? position + rangeMiles - totalMiles : null,
+      avgMph: estimateAvgMph(route),
       allStopsMatched,
     },
   };
@@ -923,8 +935,14 @@ function renderPlanOptions(strategies) {
   planPickerEl.hidden = false;
 }
 
+// Rough EV efficiency used only to turn "miles since the last stop" into
+// an estimated charge time. Real efficiency varies a lot by vehicle, and
+// real charging isn't linear (it tapers, especially above ~80%) — this is
+// a simple estimate, clearly labeled "~" in the UI, not a real prediction.
+const EV_EFFICIENCY_MI_PER_KWH = 3.5;
+
 function renderPlan(planResult) {
-  const { stops, totalMiles, reachable, stuckAtMiles, spareMiles } = planResult;
+  const { stops, totalMiles, reachable, stuckAtMiles, spareMiles, avgMph } = planResult;
 
   if (stops.length === 0 && reachable) {
     planContentEl.innerHTML = `<p>This plan needs no charging stops — you can complete the ~${formatDistanceFromMiles(
@@ -938,15 +956,51 @@ function renderPlan(planResult) {
     .map((stop, i) => {
       const title = stop.charger.AddressInfo?.Title || "EV Charger";
       const legMiles = i === 0 ? stop.milesAlongRoute : stop.milesAlongRoute - stops[i - 1].milesAlongRoute;
+      const remainingMiles = totalMiles - stop.milesAlongRoute;
+
       const amenityNote =
         stop.amenityMatch === true
           ? " · ✅ near your preferred amenities"
           : stop.amenityMatch === false
           ? " · ⚠️ no matching amenities found nearby"
           : "";
-      return `<li><strong>Stop ${i + 1}: ${escapeHtml(title)}</strong> — about ${formatDistanceFromMiles(
-        stop.milesAlongRoute
-      )} into the trip (${formatDistanceFromMiles(legMiles)} since the last stop)${amenityNote}</li>`;
+
+      // Drive time/remaining time are estimated from the route's overall
+      // average speed — not a real per-segment timing — so they're rough,
+      // especially on routes with very different highway vs. town sections.
+      const driveStat =
+        avgMph > 0
+          ? `${formatDuration((legMiles / avgMph) * 3600)} · ${formatDistanceFromMiles(legMiles)}`
+          : "Unknown";
+      const remainingStat =
+        avgMph > 0
+          ? `${formatDuration((remainingMiles / avgMph) * 3600)} · ${formatDistanceFromMiles(remainingMiles)}`
+          : "Unknown";
+
+      const maxKW = getMaxPowerKW(stop.charger);
+      const chargeStat =
+        maxKW > 0
+          ? `~${formatDuration(((legMiles / EV_EFFICIENCY_MI_PER_KWH) / maxKW) * 3600)}`
+          : "Unknown (charger speed not listed)";
+
+      // Open Charge Map is a static directory, not a live status feed — it
+      // has no wait-time/occupancy data, so this is always "unknown" today
+      // rather than a fabricated number. Shown anyway so it's not a silent
+      // gap in the stat row.
+      const waitStat = "Unknown (not available from this data source)";
+
+      return `
+        <li class="stop-item">
+          <div class="stop-header"><strong>Stop ${i + 1}: ${escapeHtml(title)}</strong>${amenityNote}</div>
+          <div class="stop-stats">
+            <span class="stat"><span class="stat-label">Drive</span>${driveStat}</span>
+            <span class="stat"><span class="stat-label">Charge</span>${chargeStat}</span>
+            <span class="stat"><span class="stat-label">Wait</span>${waitStat}</span>
+            <span class="stat"><span class="stat-label">To destination</span>${remainingStat}</span>
+          </div>
+          <div class="stop-amenities" data-stop-charger-id="${stop.charger.ID}">🔍 Checking what's nearby…</div>
+        </li>
+      `;
     })
     .join("");
 
@@ -956,8 +1010,44 @@ function renderPlan(planResult) {
         stuckAtMiles
       )} of ${formatDistanceFromMiles(totalMiles)} — no charger was found within range after that point.</p>`;
 
-  planContentEl.innerHTML = `<ol>${items}</ol>${footer}`;
+  planContentEl.innerHTML = `<ol class="stop-list">${items}</ol>${footer}`;
   planEl.hidden = false;
+
+  loadStopAmenitiesForPlan(stops);
+}
+
+// Fetches (and caches, on each charger object — shared with the map-pin
+// popups) the same "what's nearby" info for every stop in the currently
+// displayed plan, filling each stop's placeholder in as it resolves.
+async function loadStopAmenitiesForPlan(stops) {
+  await Promise.all(stops.map((stop) => loadSingleStopAmenities(stop)));
+}
+
+async function loadSingleStopAmenities(stop) {
+  const charger = stop.charger;
+  const getBlock = () => planContentEl.querySelector(`[data-stop-charger-id="${charger.ID}"]`);
+
+  if (!charger._amenityInfo) {
+    try {
+      charger._amenityInfo = await fetchNearbyAmenities(
+        charger.AddressInfo.Latitude,
+        charger.AddressInfo.Longitude,
+        amenityDistanceMetersForSearch,
+        preferredChainsForSearch,
+        preferredShopBrandsForSearch
+      );
+    } catch (err) {
+      console.error("Amenity lookup failed for a plan stop:", err);
+      // The plan may have been swapped for a different strategy while this
+      // was in flight — if so, this element no longer exists, and that's fine.
+      const el = getBlock();
+      if (el) el.textContent = "Couldn't check what's nearby right now.";
+      return;
+    }
+  }
+
+  const el = getBlock();
+  if (el) el.innerHTML = renderAmenitiesHtml(charger._amenityInfo);
 }
 
 function drawPlanStops(stops) {
@@ -1212,11 +1302,22 @@ async function fetchNearbyAmenities(lat, lon, radiusMeters, preferredChains = []
     out body;
   `;
 
+  // Makes it possible to see exactly what was searched for, from the
+  // browser console (F12 → Console), instead of having to guess whether a
+  // filter was actually applied.
+  console.log(
+    `[amenities] searching near (${lat.toFixed(5)}, ${lon.toFixed(5)}), radius ${radiusMeters}m — ` +
+      `restaurant chains: ${preferredChains.length ? preferredChains.join(", ") : "(none picked — any restaurant/cafe)"}, ` +
+      `shop brands: ${preferredShopBrands.length ? preferredShopBrands.join(", ") : "(none picked — any shop)"}`
+  );
+  console.log("[amenities] Overpass query sent:", query);
+
   const response = await fetch("https://overpass-api.de/api/interpreter", {
     method: "POST",
     body: query,
   });
   if (!response.ok) {
+    console.error(`[amenities] Overpass request failed: HTTP ${response.status}`);
     throw new Error(`Overpass returned an error (HTTP ${response.status})`);
   }
 
@@ -1233,7 +1334,7 @@ async function fetchNearbyAmenities(lat, lon, radiusMeters, preferredChains = []
     if (["restaurant", "cafe", "fast_food"].includes(tags.amenity)) key = "restaurant";
     else if (tags.leisure === "playground") key = "playground";
     else if (tags.amenity === "toilets") key = "restroom";
-    else if (["supermarket", "convenience"].includes(tags.shop)) key = "shop";
+    else if (["supermarket", "convenience", "department_store", "variety_store"].includes(tags.shop)) key = "shop";
     if (!key || el.lat == null || el.lon == null) return;
 
     found[key].push({
@@ -1247,6 +1348,12 @@ async function fetchNearbyAmenities(lat, lon, radiusMeters, preferredChains = []
     const sorted = found[key].sort((a, b) => a.distanceMeters - b.distanceMeters);
     result[key] = { count: sorted.length, items: sorted.slice(0, AMENITY_LIST_LIMIT) };
   });
+
+  console.log(
+    `[amenities] results near (${lat.toFixed(5)}, ${lon.toFixed(5)}):`,
+    Object.fromEntries(Object.entries(result).map(([key, v]) => [key, v.count]))
+  );
+
   return result;
 }
 
