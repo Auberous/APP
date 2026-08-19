@@ -1,15 +1,26 @@
 /*
  * Brand lists, grouped by country and then by category. Used to build the
- * "specific chains"/"specific shops" checklists that appear under the
- * Restaurant/Cafe and Shop amenity checkboxes in the trip form.
+ * "specific chains"/"specific shops" checklists that appear under the Food
+ * and Shop amenity checkboxes in the trip form.
  *
  * The app detects which country you're in (from your start location, or
  * your device as a fallback) and shows the matching lists below.
  *
+ * Each brand is { name, domain } — `name` is what's actually searched for
+ * (the checkbox value, matched against OpenStreetMap listings) and shown as
+ * a fallback label; `domain` is the brand's official website, used to fetch
+ * its real logo live from a free logo-by-domain service (see
+ * renderBrandChecklist() in app.js) instead of a generic emoji. A wrong or
+ * dead domain just means that one logo quietly falls back to text — it
+ * doesn't affect search behavior, which only ever uses `name`.
+ *
+ * These domains are my best-effort mapping, not independently verified
+ * against each site — if one looks wrong, it's a one-line fix here.
+ *
  * Shape per country:
  *   {
- *     restaurants: [...],                      // flat list
- *     shops: { quickStop: [...], biggerBreak: [...] },  // two tiers
+ *     restaurants: [{ name, domain }, ...],
+ *     shops: { quickStop: [{ name, domain }, ...], biggerBreak: [...] },
  *     placeholders: { start: "...", destination: "..." },  // example city pair
  *     units: "metric" or "imperial",           // default unit toggles (km/m vs mi/ft)
  *   }
@@ -29,76 +40,144 @@
 const BRAND_LISTS_BY_COUNTRY = {
   AU: {
     restaurants: [
-      "McDonald's",
-      "KFC",
-      "Hungry Jack's",
-      "Red Rooster",
-      "Guzman y Gomez",
-      "Domino's",
-      "Subway",
-      "Nando's",
-      "Oporto",
+      { name: "McDonald's", domain: "mcdonalds.com.au" },
+      { name: "KFC", domain: "kfc.com.au" },
+      { name: "Hungry Jack's", domain: "hungryjacks.com.au" },
+      { name: "Red Rooster", domain: "redrooster.com.au" },
+      { name: "Guzman y Gomez", domain: "guzmanygomez.com.au" },
+      { name: "Domino's", domain: "dominos.com.au" },
+      { name: "Subway", domain: "subway.com" },
+      { name: "Nando's", domain: "nandos.com.au" },
+      { name: "Oporto", domain: "oporto.com.au" },
     ],
     shops: {
-      quickStop: ["Coles", "Woolworths", "Aldi", "IGA", "7-Eleven"],
-      biggerBreak: ["Kmart", "Big W", "Target"],
+      quickStop: [
+        { name: "Coles", domain: "coles.com.au" },
+        { name: "Woolworths", domain: "woolworths.com.au" },
+        { name: "Aldi", domain: "aldi.com.au" },
+        { name: "IGA", domain: "iga.com.au" },
+        { name: "7-Eleven", domain: "7eleven.com.au" },
+      ],
+      biggerBreak: [
+        { name: "Kmart", domain: "kmart.com.au" },
+        { name: "Big W", domain: "bigw.com.au" },
+        { name: "Target", domain: "target.com.au" },
+      ],
     },
     placeholders: { start: "Sydney", destination: "Melbourne" },
     units: "metric",
   },
   US: {
     restaurants: [
-      "McDonald's",
-      "Burger King",
-      "KFC",
-      "Subway",
-      "Chipotle",
-      "Wendy's",
-      "Taco Bell",
-      "Domino's",
-      "Starbucks",
-      "Chick-fil-A",
+      { name: "McDonald's", domain: "mcdonalds.com" },
+      { name: "Burger King", domain: "bk.com" },
+      { name: "KFC", domain: "kfc.com" },
+      { name: "Subway", domain: "subway.com" },
+      { name: "Chipotle", domain: "chipotle.com" },
+      { name: "Wendy's", domain: "wendys.com" },
+      { name: "Taco Bell", domain: "tacobell.com" },
+      { name: "Domino's", domain: "dominos.com" },
+      { name: "Starbucks", domain: "starbucks.com" },
+      { name: "Chick-fil-A", domain: "chick-fil-a.com" },
     ],
     shops: {
-      quickStop: ["7-Eleven", "Walgreens", "CVS", "Trader Joe's", "Wawa"],
-      biggerBreak: ["Target", "Walmart", "Kohl's", "Costco"],
+      quickStop: [
+        { name: "7-Eleven", domain: "7eleven.com" },
+        { name: "Walgreens", domain: "walgreens.com" },
+        { name: "CVS", domain: "cvs.com" },
+        { name: "Trader Joe's", domain: "traderjoes.com" },
+        { name: "Wawa", domain: "wawa.com" },
+      ],
+      biggerBreak: [
+        { name: "Target", domain: "target.com" },
+        { name: "Walmart", domain: "walmart.com" },
+        { name: "Kohl's", domain: "kohls.com" },
+        { name: "Costco", domain: "costco.com" },
+      ],
     },
     placeholders: { start: "Austin", destination: "Dallas" },
     units: "imperial",
   },
   GB: {
     restaurants: [
-      "McDonald's",
-      "KFC",
-      "Greggs",
-      "Subway",
-      "Burger King",
-      "Nando's",
-      "Pret a Manger",
-      "Costa Coffee",
-      "Domino's",
+      { name: "McDonald's", domain: "mcdonalds.com" },
+      { name: "KFC", domain: "kfc.co.uk" },
+      { name: "Greggs", domain: "greggs.co.uk" },
+      { name: "Subway", domain: "subway.com" },
+      { name: "Burger King", domain: "burgerking.co.uk" },
+      { name: "Nando's", domain: "nandos.co.uk" },
+      { name: "Pret a Manger", domain: "pret.co.uk" },
+      { name: "Costa Coffee", domain: "costa.co.uk" },
+      { name: "Domino's", domain: "dominos.co.uk" },
     ],
     shops: {
-      quickStop: ["Tesco Express", "Sainsbury's Local", "Co-op", "Spar", "Aldi"],
-      biggerBreak: ["Marks & Spencer", "Argos", "TK Maxx", "Next"],
+      quickStop: [
+        { name: "Tesco Express", domain: "tesco.com" },
+        { name: "Sainsbury's Local", domain: "sainsburys.co.uk" },
+        { name: "Co-op", domain: "coop.co.uk" },
+        { name: "Spar", domain: "spar.co.uk" },
+        { name: "Aldi", domain: "aldi.co.uk" },
+      ],
+      biggerBreak: [
+        { name: "Marks & Spencer", domain: "marksandspencer.com" },
+        { name: "Argos", domain: "argos.co.uk" },
+        { name: "TK Maxx", domain: "tkmaxx.com" },
+        { name: "Next", domain: "next.co.uk" },
+      ],
     },
     placeholders: { start: "London", destination: "Manchester" },
     units: "metric",
   },
   NZ: {
-    restaurants: ["McDonald's", "KFC", "Burger King", "Subway", "Domino's", "Nando's", "Pita Pit"],
+    restaurants: [
+      { name: "McDonald's", domain: "mcdonalds.co.nz" },
+      { name: "KFC", domain: "kfc.co.nz" },
+      { name: "Burger King", domain: "burgerking.co.nz" },
+      { name: "Subway", domain: "subway.com" },
+      { name: "Domino's", domain: "dominos.co.nz" },
+      { name: "Nando's", domain: "nandos.co.nz" },
+      { name: "Pita Pit", domain: "pitapit.co.nz" },
+    ],
     shops: {
-      quickStop: ["Countdown", "New World", "Pak'nSave", "Four Square"],
-      biggerBreak: ["The Warehouse", "Kmart", "Briscoes"],
+      quickStop: [
+        { name: "Countdown", domain: "countdown.co.nz" },
+        { name: "New World", domain: "newworld.co.nz" },
+        { name: "Pak'nSave", domain: "paknsave.co.nz" },
+        { name: "Four Square", domain: "foursquare.co.nz" },
+      ],
+      biggerBreak: [
+        { name: "The Warehouse", domain: "thewarehouse.co.nz" },
+        { name: "Kmart", domain: "kmart.co.nz" },
+        { name: "Briscoes", domain: "briscoes.co.nz" },
+      ],
     },
     placeholders: { start: "Auckland", destination: "Wellington" },
     units: "metric",
   },
   CA: {
-    restaurants: ["Tim Hortons", "McDonald's", "A&W", "Subway", "Burger King", "Wendy's", "KFC", "Domino's"],
+    restaurants: [
+      { name: "Tim Hortons", domain: "timhortons.ca" },
+      { name: "McDonald's", domain: "mcdonalds.ca" },
+      { name: "A&W", domain: "aw.ca" },
+      { name: "Subway", domain: "subway.com" },
+      { name: "Burger King", domain: "burgerking.ca" },
+      { name: "Wendy's", domain: "wendys.com" },
+      { name: "KFC", domain: "kfc.ca" },
+      { name: "Domino's", domain: "dominos.ca" },
+    ],
     shops: {
-      quickStop: ["Loblaws", "Sobeys", "Metro", "Shoppers Drug Mart", "Circle K"],
-      biggerBreak: ["Canadian Tire", "Walmart", "Costco"],
+      quickStop: [
+        { name: "Loblaws", domain: "loblaws.ca" },
+        { name: "Sobeys", domain: "sobeys.com" },
+        { name: "Metro", domain: "metro.ca" },
+        { name: "Shoppers Drug Mart", domain: "shoppersdrugmart.ca" },
+        { name: "Circle K", domain: "circlek.com" },
+      ],
+      biggerBreak: [
+        { name: "Canadian Tire", domain: "canadiantire.ca" },
+        { name: "Walmart", domain: "walmart.ca" },
+        { name: "Costco", domain: "costco.ca" },
+      ],
     },
     placeholders: { start: "Toronto", destination: "Montreal" },
     units: "metric",
@@ -108,10 +187,22 @@ const BRAND_LISTS_BY_COUNTRY = {
 // Used when the detected country isn't one of the lists above — a handful
 // of chains/brands common enough internationally to be a reasonable default.
 const BRAND_LISTS_DEFAULT = {
-  restaurants: ["McDonald's", "KFC", "Subway", "Domino's", "Burger King"],
+  restaurants: [
+    { name: "McDonald's", domain: "mcdonalds.com" },
+    { name: "KFC", domain: "kfc.com" },
+    { name: "Subway", domain: "subway.com" },
+    { name: "Domino's", domain: "dominos.com" },
+    { name: "Burger King", domain: "bk.com" },
+  ],
   shops: {
-    quickStop: ["7-Eleven", "Aldi"],
-    biggerBreak: ["Walmart", "Target"],
+    quickStop: [
+      { name: "7-Eleven", domain: "7eleven.com" },
+      { name: "Aldi", domain: "aldi.com" },
+    ],
+    biggerBreak: [
+      { name: "Walmart", domain: "walmart.com" },
+      { name: "Target", domain: "target.com" },
+    ],
   },
   placeholders: { start: "Austin", destination: "Dallas" },
   units: "imperial",

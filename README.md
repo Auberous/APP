@@ -103,7 +103,10 @@ run entirely in your browser.
    a `restaurants` array and a `shops` object). Picking brands actually
    narrows the live Overpass query itself (matched by name), not just a
    label — it affects both the popup's "what's nearby" list and the
-   "Family-friendly stops" plan matching.
+   "Family-friendly stops" plan matching. Each brand row also shows that
+   brand's real logo (fetched live by domain — see the limitations below),
+   not just a generic icon, so chains in the same category are easy to
+   tell apart at a glance.
 7. **The Start location/Destination example text is country-specific too**
    (e.g. "Sydney"/"Melbourne" for AU, "Austin"/"Dallas" for US) — same
    `brandLists.js` entries, same detected country, just placeholder text
@@ -219,6 +222,20 @@ you're ready — just say the word.
   Console) — every amenity lookup logs the radius, the chain/shop brand
   list actually used, the raw Overpass query, and the counts that came
   back, so it's possible to see exactly what was searched for.
+- **Brand logos are fetched live from a free logo-by-domain service**
+  (Clearbit's logo API), using the `domain` recorded for each brand in
+  `brandLists.js` — not files stored in this project. Two things worth
+  knowing: (1) those domains are a best-effort mapping I wrote, not
+  independently verified against each company's actual site — if one's
+  wrong, it's a one-line fix in `brandLists.js`, and the only effect of a
+  wrong/dead domain is that one logo quietly falls back to plain text (the
+  brand name still works fine for search, since that always uses `name`,
+  never `domain`). (2) These are each company's real trademarked logos,
+  fetched and displayed without their involvement — fine for personal,
+  non-commercial use like this, but worth knowing if this app is ever
+  shown publicly at scale or monetized, since trademark owners can object
+  to that kind of use. I'm not a lawyer and this isn't legal advice — just
+  flagging it honestly.
 
 ## Natural next steps (V3 ideas — not built yet)
 

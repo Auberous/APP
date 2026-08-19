@@ -333,20 +333,30 @@ function getBrandListsForCountry(countryCode) {
 // (in case any of the same names appear in both). Shared by both the
 // restaurant chain picker and each tier of the shop brand picker — same
 // component, just handed a different list and container each time.
+//
+// Each checkbox shows the brand's real logo, fetched live from a free
+// logo-by-domain service (no images hosted by this app), plus its name.
+// The name is what's actually searched for — the logo is just a visual
+// aid, so a wrong/dead domain only means a missing picture: the image's
+// onerror hides it and the text name (always present) carries on fine.
 function renderBrandChecklist(container, brands) {
   const previouslyChecked = new Set(
     Array.from(container.querySelectorAll("input:checked")).map((cb) => cb.value)
   );
 
   container.innerHTML = brands
-    .map(
-      (brand) => `
+    .map((brand) => {
+      const logoUrl = `https://logo.clearbit.com/${encodeURIComponent(brand.domain)}?size=32`;
+      return `
         <label class="chain-check">
-          <input type="checkbox" value="${escapeHtml(brand)}" ${previouslyChecked.has(brand) ? "checked" : ""} />
-          ${escapeHtml(brand)}
+          <input type="checkbox" value="${escapeHtml(brand.name)}" ${
+        previouslyChecked.has(brand.name) ? "checked" : ""
+      } />
+          <img class="brand-logo" src="${logoUrl}" alt="" onerror="this.style.display='none'" />
+          ${escapeHtml(brand.name)}
         </label>
-      `
-    )
+      `;
+    })
     .join("");
 }
 

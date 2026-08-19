@@ -154,6 +154,18 @@ header h1 {
   cursor: pointer;
 }
 
+/* A brand's real logo (fetched live, see renderBrandChecklist in app.js).
+   Fixed square box so the row stays aligned even before an image loads,
+   or if it never does — onerror hides the broken image, leaving just the
+   name text and this box's small gap. */
+.brand-logo {
+  width: 16px;
+  height: 16px;
+  object-fit: contain;
+  border-radius: 3px;
+  flex-shrink: 0;
+}
+
 /* Groups the shop picker into "Quick stop" / "Bigger break" tiers */
 .chain-tier + .chain-tier {
   margin-top: 0.5rem;
