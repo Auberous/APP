@@ -114,6 +114,46 @@ header h1 {
   font-size: 0.9rem;
 }
 
+/* The "specific chains" panel that expands under Restaurant/Cafe */
+.chain-picker {
+  margin-top: 0.4rem;
+  padding: 0.5rem 0.6rem;
+  background: #f7f9fc;
+  border: 1px solid #e0e6f0;
+  border-radius: 6px;
+}
+
+.chain-picker-label {
+  display: block;
+  font-size: 0.78rem;
+  font-weight: 600;
+  color: #555;
+  margin-bottom: 0.35rem;
+}
+
+.chain-checks {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.4rem 0.9rem;
+}
+
+/* Scoped as .chain-checks .chain-check (two classes), same reason as the
+   .amenity-checks .amenity-check rule above: reliably beats .field label. */
+.chain-checks .chain-check {
+  display: flex;
+  align-items: center;
+  gap: 0.3rem;
+  font-size: 0.82rem;
+  color: #333;
+  font-weight: normal;
+  cursor: pointer;
+  white-space: nowrap;
+}
+
+.chain-checks .chain-check input {
+  cursor: pointer;
+}
+
 #find-btn {
   padding: 0.6rem 1.1rem;
   background: #1a73e8;

@@ -64,8 +64,15 @@ let selectedRouteIndex = -1;
 let hasRangeForSearch = false;
 let rangeMilesForSearch = 0;
 let preferredAmenitiesForSearch = []; // amenity keys checked in the form, e.g. ["restaurant","playground"]
+let preferredChainsForSearch = []; // specific chain names checked, e.g. ["McDonald's","KFC"] — narrows "restaurant"
 let planStrategies = [];
 let selectedPlanKey = null;
+
+// Best guess at what country you're in, used to pick which chain list the
+// chain picker shows. Starts from your device's own locale, then gets
+// refined once we have a real location to go on (your GPS position on
+// load, or wherever "Start location" gets geocoded to).
+let detectedCountryCode = null;
 
 // Which unit distances are typed in and displayed in. All the actual
 // planning math elsewhere in this file works in miles regardless — this
@@ -83,6 +90,9 @@ const amenityCheckboxes = document.querySelectorAll('.amenity-check input[type="
 const amenityDistanceInput = document.getElementById("amenity-distance");
 const amenityUnitMBtn = document.getElementById("amenity-unit-m-btn");
 const amenityUnitFtBtn = document.getElementById("amenity-unit-ft-btn");
+const amenityRestaurantCheckbox = document.getElementById("amenity-restaurant");
+const chainPickerEl = document.getElementById("chain-picker");
+const chainChecksEl = document.getElementById("chain-checks");
 const statusEl = document.getElementById("status");
 const findBtn = document.getElementById("find-btn");
 const routePickerEl = document.getElementById("route-picker");
@@ -164,7 +174,9 @@ function initUserLocation() {
       map.flyTo([latitude, longitude], 11);
 
       try {
-        startInput.value = await reverseGeocode(latitude, longitude);
+        const result = await reverseGeocode(latitude, longitude);
+        startInput.value = result.label;
+        setDetectedCountry(result.countryCode);
       } catch (err) {
         console.error(err);
         startInput.value = "My Location";
@@ -179,8 +191,9 @@ function initUserLocation() {
 }
 
 // Turns coordinates into a short, human-friendly place name (e.g.
-// "Bundeena, New South Wales") using Nominatim's free reverse-geocoding —
-// the same free service used for the forward lookups elsewhere in this file.
+// "Bundeena, New South Wales") plus a country code, using Nominatim's free
+// reverse-geocoding — the same free service used for the forward lookups
+// elsewhere in this file.
 async function reverseGeocode(lat, lon) {
   const url = `https://nominatim.openstreetmap.org/reverse?format=json&lat=${lat}&lon=${lon}`;
   const response = await fetch(url);
@@ -192,9 +205,62 @@ async function reverseGeocode(lat, lon) {
   const region = addr.state || addr.country;
   const label = [place, region].filter(Boolean).join(", ");
 
-  return label || data.display_name || "My Location";
+  return {
+    label: label || data.display_name || "My Location",
+    countryCode: addr.country_code ? addr.country_code.toUpperCase() : null,
+  };
 }
 
+// ---- Which country's chain list to show in the "specific chains" picker ---
+// Best guess starts from the device's own locale (e.g. browser language
+// "en-AU" implies "AU"), then gets replaced by a real signal as soon as one
+// is available — your GPS location on load, or wherever "Start location"
+// ends up getting geocoded to (see the submit handler below). Either of
+// those is more reliable than the locale guess, since a locale doesn't
+// necessarily match where you're actually driving.
+function guessCountryFromLocale() {
+  const locale = navigator.language || (navigator.languages && navigator.languages[0]);
+  const region = locale && locale.split("-")[1];
+  return region ? region.toUpperCase() : null;
+}
+
+function setDetectedCountry(countryCode) {
+  if (!countryCode || countryCode === detectedCountryCode) return;
+  detectedCountryCode = countryCode;
+  renderChainChecks();
+}
+
+function getChainsForCountry(countryCode) {
+  return (countryCode && RESTAURANT_CHAINS_BY_COUNTRY[countryCode]) || RESTAURANT_CHAINS_DEFAULT;
+}
+
+// Fills in the chain checkboxes for the currently detected country,
+// preserving whichever ones are already checked if the list is rebuilt
+// after a country change (in case any of the same names appear in both).
+function renderChainChecks() {
+  const chains = getChainsForCountry(detectedCountryCode);
+  const previouslyChecked = new Set(
+    Array.from(chainChecksEl.querySelectorAll("input:checked")).map((cb) => cb.value)
+  );
+
+  chainChecksEl.innerHTML = chains
+    .map(
+      (chain) => `
+        <label class="chain-check">
+          <input type="checkbox" value="${escapeHtml(chain)}" ${previouslyChecked.has(chain) ? "checked" : ""} />
+          ${escapeHtml(chain)}
+        </label>
+      `
+    )
+    .join("");
+}
+
+amenityRestaurantCheckbox.addEventListener("change", () => {
+  chainPickerEl.hidden = !amenityRestaurantCheckbox.checked;
+});
+
+detectedCountryCode = guessCountryFromLocale();
+renderChainChecks();
 initUserLocation();
 
 modeSpeedBtn.addEventListener("click", () => setColorMode("speed"));
@@ -221,6 +287,9 @@ form.addEventListener("submit", async (event) => {
   preferredAmenitiesForSearch = Array.from(amenityCheckboxes)
     .filter((cb) => cb.checked)
     .map((cb) => cb.value);
+  // Which chain checkboxes are checked is read after the start location is
+  // geocoded below (not here), in case that corrects the detected country
+  // and changes which chains are even listed.
 
   const amenityDistanceValue = parseFloat(amenityDistanceInput.value);
   amenityDistanceMetersForSearch =
@@ -243,6 +312,14 @@ form.addEventListener("submit", async (event) => {
     // Step 1: turn addresses into coordinates
     setStatus(`Looking up "${startText}"...`);
     const startCoord = await geocode(startText);
+    setDetectedCountry(startCoord.countryCode); // refines the chain picker to match where the trip actually starts
+    // Only applies while "Restaurant/Cafe" itself is checked — the chain
+    // checkboxes stay in the DOM (hidden) when it's unchecked, so this
+    // guards against a stale chain selection filtering results after
+    // someone's turned the parent preference off.
+    preferredChainsForSearch = amenityRestaurantCheckbox.checked
+      ? Array.from(chainChecksEl.querySelectorAll("input:checked")).map((cb) => cb.value)
+      : [];
 
     setStatus(`Looking up "${destText}"...`);
     const destCoord = await geocode(destText);
@@ -376,7 +453,7 @@ function markSelectedCard(container, matchFn) {
 // but please don't hammer it with requests (fine for a personal app like this).
 async function geocode(placeText) {
   const url =
-    "https://nominatim.openstreetmap.org/search?format=json&limit=1&q=" +
+    "https://nominatim.openstreetmap.org/search?format=json&limit=1&addressdetails=1&q=" +
     encodeURIComponent(placeText);
 
   const response = await fetch(url);
@@ -389,9 +466,11 @@ async function geocode(placeText) {
     throw new Error(`Couldn't find a location matching "${placeText}". Try being more specific.`);
   }
 
+  const countryCode = results[0].address?.country_code;
   return {
     lat: parseFloat(results[0].lat),
     lon: parseFloat(results[0].lon),
+    countryCode: countryCode ? countryCode.toUpperCase() : null,
   };
 }
 
@@ -767,7 +846,8 @@ async function candidateMatchesAmenities(charger, preferredAmenities) {
       charger._amenityInfo = await fetchNearbyAmenities(
         charger.AddressInfo.Latitude,
         charger.AddressInfo.Longitude,
-        amenityDistanceMetersForSearch
+        amenityDistanceMetersForSearch,
+        preferredChainsForSearch
       );
     } catch (err) {
       console.error("Amenity check failed for a candidate charger:", err);
@@ -1047,7 +1127,8 @@ async function loadNearbyAmenities(marker, charger) {
       charger._amenityInfo = await fetchNearbyAmenities(
         charger.AddressInfo.Latitude,
         charger.AddressInfo.Longitude,
-        amenityDistanceMetersForSearch
+        amenityDistanceMetersForSearch,
+        preferredChainsForSearch
       );
     } catch (err) {
       console.error("Overpass amenity lookup failed:", err);
@@ -1064,11 +1145,33 @@ async function loadNearbyAmenities(marker, charger) {
   if (el) el.innerHTML = renderAmenitiesHtml(charger._amenityInfo);
 }
 
-async function fetchNearbyAmenities(lat, lon, radiusMeters) {
+// Builds an Overpass tag filter like ["name"~"McDonald's|KFC",i], or an
+// empty string if no chains are selected (meaning: any restaurant/cafe).
+function buildChainNameFilter(preferredChains) {
+  if (!preferredChains || preferredChains.length === 0) return "";
+  const pattern = preferredChains.map(escapeRegExp).join("|");
+  return `["name"~"${pattern}",i]`;
+}
+
+// Escapes a chain name for safe use inside the Overpass regex above —
+// chain names can contain characters (like the apostrophe in "McDonald's")
+// that are harmless in a name but would otherwise be treated as regex syntax.
+function escapeRegExp(str) {
+  return str.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+}
+
+async function fetchNearbyAmenities(lat, lon, radiusMeters, preferredChains = []) {
+  // When specific chains are picked, this narrows the restaurant/cafe part
+  // of the query to just those names (matched case-insensitively against
+  // OpenStreetMap's "name" tag) instead of any restaurant/cafe. It's
+  // real filtering done by Overpass itself, not something applied after
+  // the fact — so if no chain in your list is nearby, none show up at all.
+  const chainFilter = buildChainNameFilter(preferredChains);
+
   const query = `
     [out:json][timeout:15];
     (
-      node["amenity"~"^(restaurant|cafe|fast_food)$"](around:${radiusMeters},${lat},${lon});
+      node["amenity"~"^(restaurant|cafe|fast_food)$"]${chainFilter}(around:${radiusMeters},${lat},${lon});
       node["leisure"="playground"](around:${radiusMeters},${lat},${lon});
       node["amenity"="toilets"](around:${radiusMeters},${lat},${lon});
       node["shop"~"^(supermarket|convenience)$"](around:${radiusMeters},${lat},${lon});

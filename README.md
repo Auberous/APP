@@ -14,8 +14,9 @@ needed to actually complete the trip.
 | `index.html` | The page structure — the form and the map area. |
 | `style.css` | How things look. |
 | `app.js` | The logic — looks up locations, gets a route, fetches chargers, draws pins. |
+| `restaurantChains.js` | Fast-food chain lists by country, used by the "specific chains" picker. |
 
-No installs, no build step, no server, no login. It's three plain files that
+No installs, no build step, no server, no login. It's four plain files that
 run entirely in your browser.
 
 ## How the pieces fit together
@@ -73,6 +74,15 @@ run entirely in your browser.
    Pick a plan box to see that plan's stops as big numbered pins on the map,
    plus a written stop-by-stop plan above it (miles into the trip, miles
    since the last stop, and how much range you'll have left at the end).
+6. **Checking "Restaurant/Cafe" reveals a "specific chains" panel** — pick
+   particular chains (McDonald's, KFC, etc.) to narrow that category down to
+   just those, instead of any restaurant/cafe. Which chains are listed
+   depends on your detected country (starts from your device's language
+   setting, then gets corrected once your GPS location or geocoded start
+   location is known — see `restaurantChains.js` for the lists, one array
+   per country). Picking chains actually narrows the live Overpass query
+   itself (matched by name), not just a label — it affects both the popup's
+   "what's nearby" list and the "Family-friendly stops" plan matching.
 
 None of these services require you to sign up or pay for V1 — they're all
 free, public APIs meant for exactly this kind of light personal use.
@@ -137,6 +147,14 @@ you're ready — just say the word.
   search, which isn't a good trade against the free service's rate limits.
   In practice this means it usually finds a match quickly if one exists
   nearby, but it isn't an exhaustive search.
+- **Chain matching is a name search, not a verified brand database** — it
+  matches whatever OpenStreetMap has in a place's "name" tag, so a
+  misspelled or unusually-formatted listing could be missed, and it doesn't
+  know about chains not yet in `restaurantChains.js` for your country
+  (those fall back to a short internationally-common list, which may not
+  fit). Country detection is a best guess too — locale first, corrected by
+  GPS/start-location geocoding as those come in — so it's occasionally
+  wrong right after the page loads, before either of those has resolved.
 
 ## Natural next steps (V3 ideas — not built yet)
 

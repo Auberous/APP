@@ -44,11 +44,20 @@
     <div class="field">
       <label>Prefer stops near (optional)</label>
       <div class="amenity-checks">
-        <label class="amenity-check"><input type="checkbox" value="restaurant" /> 🍔 Restaurant/Cafe</label>
+        <label class="amenity-check"><input type="checkbox" id="amenity-restaurant" value="restaurant" /> 🍔 Restaurant/Cafe</label>
         <label class="amenity-check"><input type="checkbox" value="playground" /> 🧒 Playground</label>
         <label class="amenity-check"><input type="checkbox" value="restroom" /> 🚻 Restroom</label>
         <label class="amenity-check"><input type="checkbox" value="shop" /> 🛒 Shop</label>
       </div>
+
+      <!-- Shown only when "Restaurant/Cafe" above is checked: pick specific
+           chains to narrow the search to, instead of any restaurant/cafe.
+           Which chains are listed depends on the detected country. -->
+      <div id="chain-picker" class="chain-picker" hidden>
+        <span class="chain-picker-label">Specific chains (optional):</span>
+        <div id="chain-checks" class="chain-checks"></div>
+      </div>
+
       <div class="amenity-distance-row">
         <span>within</span>
         <input id="amenity-distance" type="number" min="50" max="3000" step="50" value="100" />
@@ -101,6 +110,8 @@
 
   <!-- Leaflet's JavaScript library -->
   <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
-  <script src="app.js?v=7"></script>
+  <!-- The chain lists behind the "specific chains" picker, by country. -->
+  <script src="restaurantChains.js?v=1"></script>
+  <script src="app.js?v=8"></script>
 </body>
 </html>
