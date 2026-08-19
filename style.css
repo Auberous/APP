@@ -154,6 +154,21 @@ header h1 {
   cursor: pointer;
 }
 
+/* Groups the shop picker into "Quick stop" / "Bigger break" tiers */
+.chain-tier + .chain-tier {
+  margin-top: 0.5rem;
+}
+
+.chain-tier-label {
+  display: block;
+  font-size: 0.72rem;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.03em;
+  color: #888;
+  margin-bottom: 0.25rem;
+}
+
 #find-btn {
   padding: 0.6rem 1.1rem;
   background: #1a73e8;

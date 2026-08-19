@@ -14,7 +14,7 @@ needed to actually complete the trip.
 | `index.html` | The page structure — the form and the map area. |
 | `style.css` | How things look. |
 | `app.js` | The logic — looks up locations, gets a route, fetches chargers, draws pins. |
-| `restaurantChains.js` | Fast-food chain lists by country, used by the "specific chains" picker. |
+| `brandLists.js` | Restaurant chain and shop brand lists by country, used by the "specific chains"/"specific shops" pickers. |
 
 No installs, no build step, no server, no login. It's four plain files that
 run entirely in your browser.
@@ -74,15 +74,20 @@ run entirely in your browser.
    Pick a plan box to see that plan's stops as big numbered pins on the map,
    plus a written stop-by-stop plan above it (miles into the trip, miles
    since the last stop, and how much range you'll have left at the end).
-6. **Checking "Restaurant/Cafe" reveals a "specific chains" panel** — pick
-   particular chains (McDonald's, KFC, etc.) to narrow that category down to
-   just those, instead of any restaurant/cafe. Which chains are listed
-   depends on your detected country (starts from your device's language
-   setting, then gets corrected once your GPS location or geocoded start
-   location is known — see `restaurantChains.js` for the lists, one array
-   per country). Picking chains actually narrows the live Overpass query
-   itself (matched by name), not just a label — it affects both the popup's
-   "what's nearby" list and the "Family-friendly stops" plan matching.
+6. **Checking "Restaurant/Cafe" or "Shop" reveals a brand-picker panel**
+   underneath it — pick particular chains/brands to narrow that category
+   down to just those, instead of any restaurant/cafe or any shop. Shops
+   are grouped into two tiers: **Quick stop** (supermarkets/convenience —
+   Coles, Woolworths, 7-Eleven, etc.) and **Bigger break** (department/
+   variety stores — Kmart, Target, Big W, etc.) — pick from either or both,
+   they're combined into one filter. Which brands are listed depends on
+   your detected country (starts from your device's language setting, then
+   gets corrected once your GPS location or geocoded start location is
+   known — see `brandLists.js` for the lists, one entry per country with a
+   `restaurants` array and a `shops` object). Picking brands actually
+   narrows the live Overpass query itself (matched by name), not just a
+   label — it affects both the popup's "what's nearby" list and the
+   "Family-friendly stops" plan matching.
 
 None of these services require you to sign up or pay for V1 — they're all
 free, public APIs meant for exactly this kind of light personal use.
@@ -147,14 +152,19 @@ you're ready — just say the word.
   search, which isn't a good trade against the free service's rate limits.
   In practice this means it usually finds a match quickly if one exists
   nearby, but it isn't an exhaustive search.
-- **Chain matching is a name search, not a verified brand database** — it
+- **Chain/brand matching is a name search, not a verified database** — it
   matches whatever OpenStreetMap has in a place's "name" tag, so a
   misspelled or unusually-formatted listing could be missed, and it doesn't
-  know about chains not yet in `restaurantChains.js` for your country
-  (those fall back to a short internationally-common list, which may not
-  fit). Country detection is a best guess too — locale first, corrected by
-  GPS/start-location geocoding as those come in — so it's occasionally
-  wrong right after the page loads, before either of those has resolved.
+  know about brands not yet in `brandLists.js` for your country (those fall
+  back to a short internationally-common list, which may not fit). Country
+  detection is a best guess too — locale first, corrected by GPS/start-
+  location geocoding as those come in — so it's occasionally wrong right
+  after the page loads, before either of those has resolved.
+- **The shop query now also looks for department/variety stores** (not
+  just supermarkets/convenience like before), since that's the OSM tagging
+  the "Bigger break" tier's brands (Kmart, Target, etc.) actually use. This
+  slightly broadens what counts as "shop" everywhere, not just when brands
+  are picked.
 
 ## Natural next steps (V3 ideas — not built yet)
 

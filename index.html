@@ -47,7 +47,7 @@
         <label class="amenity-check"><input type="checkbox" id="amenity-restaurant" value="restaurant" /> 🍔 Restaurant/Cafe</label>
         <label class="amenity-check"><input type="checkbox" value="playground" /> 🧒 Playground</label>
         <label class="amenity-check"><input type="checkbox" value="restroom" /> 🚻 Restroom</label>
-        <label class="amenity-check"><input type="checkbox" value="shop" /> 🛒 Shop</label>
+        <label class="amenity-check"><input type="checkbox" id="amenity-shop" value="shop" /> 🛒 Shop</label>
       </div>
 
       <!-- Shown only when "Restaurant/Cafe" above is checked: pick specific
@@ -56,6 +56,21 @@
       <div id="chain-picker" class="chain-picker" hidden>
         <span class="chain-picker-label">Specific chains (optional):</span>
         <div id="chain-checks" class="chain-checks"></div>
+      </div>
+
+      <!-- Shown only when "Shop" above is checked: same idea as the chain
+           picker, but grouped into two tiers (a quick errand vs. somewhere
+           worth a longer stop). -->
+      <div id="shop-picker" class="chain-picker" hidden>
+        <span class="chain-picker-label">Specific shops (optional):</span>
+        <div class="chain-tier">
+          <span class="chain-tier-label">Quick stop</span>
+          <div id="shop-quickstop-checks" class="chain-checks"></div>
+        </div>
+        <div class="chain-tier">
+          <span class="chain-tier-label">Bigger break</span>
+          <div id="shop-biggerbreak-checks" class="chain-checks"></div>
+        </div>
       </div>
 
       <div class="amenity-distance-row">
@@ -110,8 +125,8 @@
 
   <!-- Leaflet's JavaScript library -->
   <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
-  <!-- The chain lists behind the "specific chains" picker, by country. -->
-  <script src="restaurantChains.js?v=1"></script>
-  <script src="app.js?v=8"></script>
+  <!-- The brand lists behind the "specific chains"/"specific shops" pickers, by country. -->
+  <script src="brandLists.js?v=1"></script>
+  <script src="app.js?v=9"></script>
 </body>
 </html>

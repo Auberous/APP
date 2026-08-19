@@ -65,6 +65,7 @@ let hasRangeForSearch = false;
 let rangeMilesForSearch = 0;
 let preferredAmenitiesForSearch = []; // amenity keys checked in the form, e.g. ["restaurant","playground"]
 let preferredChainsForSearch = []; // specific chain names checked, e.g. ["McDonald's","KFC"] — narrows "restaurant"
+let preferredShopBrandsForSearch = []; // specific shop names checked (both tiers combined) — narrows "shop"
 let planStrategies = [];
 let selectedPlanKey = null;
 
@@ -93,6 +94,10 @@ const amenityUnitFtBtn = document.getElementById("amenity-unit-ft-btn");
 const amenityRestaurantCheckbox = document.getElementById("amenity-restaurant");
 const chainPickerEl = document.getElementById("chain-picker");
 const chainChecksEl = document.getElementById("chain-checks");
+const amenityShopCheckbox = document.getElementById("amenity-shop");
+const shopPickerEl = document.getElementById("shop-picker");
+const shopQuickStopChecksEl = document.getElementById("shop-quickstop-checks");
+const shopBiggerBreakChecksEl = document.getElementById("shop-biggerbreak-checks");
 const statusEl = document.getElementById("status");
 const findBtn = document.getElementById("find-btn");
 const routePickerEl = document.getElementById("route-picker");
@@ -228,39 +233,58 @@ function setDetectedCountry(countryCode) {
   if (!countryCode || countryCode === detectedCountryCode) return;
   detectedCountryCode = countryCode;
   renderChainChecks();
+  renderShopChecks();
 }
 
-function getChainsForCountry(countryCode) {
-  return (countryCode && RESTAURANT_CHAINS_BY_COUNTRY[countryCode]) || RESTAURANT_CHAINS_DEFAULT;
+// Looks up one country's brand lists, falling back to BRAND_LISTS_DEFAULT
+// (from brandLists.js) for any country not in there.
+function getBrandListsForCountry(countryCode) {
+  return (countryCode && BRAND_LISTS_BY_COUNTRY[countryCode]) || BRAND_LISTS_DEFAULT;
 }
 
-// Fills in the chain checkboxes for the currently detected country,
-// preserving whichever ones are already checked if the list is rebuilt
-// after a country change (in case any of the same names appear in both).
-function renderChainChecks() {
-  const chains = getChainsForCountry(detectedCountryCode);
+// Fills in a set of brand checkboxes into `container`, preserving whichever
+// ones are already checked if the list is rebuilt after a country change
+// (in case any of the same names appear in both). Shared by both the
+// restaurant chain picker and each tier of the shop brand picker — same
+// component, just handed a different list and container each time.
+function renderBrandChecklist(container, brands) {
   const previouslyChecked = new Set(
-    Array.from(chainChecksEl.querySelectorAll("input:checked")).map((cb) => cb.value)
+    Array.from(container.querySelectorAll("input:checked")).map((cb) => cb.value)
   );
 
-  chainChecksEl.innerHTML = chains
+  container.innerHTML = brands
     .map(
-      (chain) => `
+      (brand) => `
         <label class="chain-check">
-          <input type="checkbox" value="${escapeHtml(chain)}" ${previouslyChecked.has(chain) ? "checked" : ""} />
-          ${escapeHtml(chain)}
+          <input type="checkbox" value="${escapeHtml(brand)}" ${previouslyChecked.has(brand) ? "checked" : ""} />
+          ${escapeHtml(brand)}
         </label>
       `
     )
     .join("");
 }
 
+function renderChainChecks() {
+  renderBrandChecklist(chainChecksEl, getBrandListsForCountry(detectedCountryCode).restaurants);
+}
+
+function renderShopChecks() {
+  const shops = getBrandListsForCountry(detectedCountryCode).shops;
+  renderBrandChecklist(shopQuickStopChecksEl, shops.quickStop);
+  renderBrandChecklist(shopBiggerBreakChecksEl, shops.biggerBreak);
+}
+
 amenityRestaurantCheckbox.addEventListener("change", () => {
   chainPickerEl.hidden = !amenityRestaurantCheckbox.checked;
 });
 
+amenityShopCheckbox.addEventListener("change", () => {
+  shopPickerEl.hidden = !amenityShopCheckbox.checked;
+});
+
 detectedCountryCode = guessCountryFromLocale();
 renderChainChecks();
+renderShopChecks();
 initUserLocation();
 
 modeSpeedBtn.addEventListener("click", () => setColorMode("speed"));
@@ -312,13 +336,16 @@ form.addEventListener("submit", async (event) => {
     // Step 1: turn addresses into coordinates
     setStatus(`Looking up "${startText}"...`);
     const startCoord = await geocode(startText);
-    setDetectedCountry(startCoord.countryCode); // refines the chain picker to match where the trip actually starts
-    // Only applies while "Restaurant/Cafe" itself is checked — the chain
+    setDetectedCountry(startCoord.countryCode); // refines the chain/shop pickers to match where the trip actually starts
+    // Both only apply while their parent checkbox is checked — the brand
     // checkboxes stay in the DOM (hidden) when it's unchecked, so this
-    // guards against a stale chain selection filtering results after
-    // someone's turned the parent preference off.
+    // guards against a stale selection filtering results after someone's
+    // turned the parent preference off.
     preferredChainsForSearch = amenityRestaurantCheckbox.checked
       ? Array.from(chainChecksEl.querySelectorAll("input:checked")).map((cb) => cb.value)
+      : [];
+    preferredShopBrandsForSearch = amenityShopCheckbox.checked
+      ? Array.from(shopPickerEl.querySelectorAll("input:checked")).map((cb) => cb.value)
       : [];
 
     setStatus(`Looking up "${destText}"...`);
@@ -847,7 +874,8 @@ async function candidateMatchesAmenities(charger, preferredAmenities) {
         charger.AddressInfo.Latitude,
         charger.AddressInfo.Longitude,
         amenityDistanceMetersForSearch,
-        preferredChainsForSearch
+        preferredChainsForSearch,
+        preferredShopBrandsForSearch
       );
     } catch (err) {
       console.error("Amenity check failed for a candidate charger:", err);
@@ -1128,7 +1156,8 @@ async function loadNearbyAmenities(marker, charger) {
         charger.AddressInfo.Latitude,
         charger.AddressInfo.Longitude,
         amenityDistanceMetersForSearch,
-        preferredChainsForSearch
+        preferredChainsForSearch,
+        preferredShopBrandsForSearch
       );
     } catch (err) {
       console.error("Overpass amenity lookup failed:", err);
@@ -1146,27 +1175,31 @@ async function loadNearbyAmenities(marker, charger) {
 }
 
 // Builds an Overpass tag filter like ["name"~"McDonald's|KFC",i], or an
-// empty string if no chains are selected (meaning: any restaurant/cafe).
-function buildChainNameFilter(preferredChains) {
-  if (!preferredChains || preferredChains.length === 0) return "";
-  const pattern = preferredChains.map(escapeRegExp).join("|");
+// empty string if no brand names are given (meaning: match the whole
+// category, not narrowed to specific brands). Shared by the restaurant
+// chain filter and the shop brand filter below.
+function buildBrandNameFilter(preferredBrands) {
+  if (!preferredBrands || preferredBrands.length === 0) return "";
+  const pattern = preferredBrands.map(escapeRegExp).join("|");
   return `["name"~"${pattern}",i]`;
 }
 
-// Escapes a chain name for safe use inside the Overpass regex above —
-// chain names can contain characters (like the apostrophe in "McDonald's")
-// that are harmless in a name but would otherwise be treated as regex syntax.
+// Escapes a brand name for safe use inside the Overpass regex above —
+// names can contain characters (like the apostrophe in "McDonald's") that
+// are harmless in a name but would otherwise be treated as regex syntax.
 function escapeRegExp(str) {
   return str.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
 }
 
-async function fetchNearbyAmenities(lat, lon, radiusMeters, preferredChains = []) {
-  // When specific chains are picked, this narrows the restaurant/cafe part
-  // of the query to just those names (matched case-insensitively against
-  // OpenStreetMap's "name" tag) instead of any restaurant/cafe. It's
-  // real filtering done by Overpass itself, not something applied after
-  // the fact — so if no chain in your list is nearby, none show up at all.
-  const chainFilter = buildChainNameFilter(preferredChains);
+async function fetchNearbyAmenities(lat, lon, radiusMeters, preferredChains = [], preferredShopBrands = []) {
+  // When specific chains/brands are picked, these narrow the restaurant/cafe
+  // and shop parts of the query to just those names (matched case-
+  // insensitively against OpenStreetMap's "name" tag) instead of any
+  // restaurant/cafe or any shop. It's real filtering done by Overpass
+  // itself, not something applied after the fact — so if none of your
+  // picks are nearby, none show up at all.
+  const chainFilter = buildBrandNameFilter(preferredChains);
+  const shopBrandFilter = buildBrandNameFilter(preferredShopBrands);
 
   const query = `
     [out:json][timeout:15];
@@ -1174,7 +1207,7 @@ async function fetchNearbyAmenities(lat, lon, radiusMeters, preferredChains = []
       node["amenity"~"^(restaurant|cafe|fast_food)$"]${chainFilter}(around:${radiusMeters},${lat},${lon});
       node["leisure"="playground"](around:${radiusMeters},${lat},${lon});
       node["amenity"="toilets"](around:${radiusMeters},${lat},${lon});
-      node["shop"~"^(supermarket|convenience)$"](around:${radiusMeters},${lat},${lon});
+      node["shop"~"^(supermarket|convenience|department_store|variety_store)$"]${shopBrandFilter}(around:${radiusMeters},${lat},${lon});
     );
     out body;
   `;
