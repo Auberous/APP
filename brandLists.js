@@ -11,6 +11,7 @@
  *     restaurants: [...],                      // flat list
  *     shops: { quickStop: [...], biggerBreak: [...] },  // two tiers
  *     placeholders: { start: "...", destination: "..." },  // example city pair
+ *     units: "metric" or "imperial",           // default unit toggles (km/m vs mi/ft)
  *   }
  *
  * To add a new country: add one more "XX": {...} entry below, keyed by its
@@ -43,6 +44,7 @@ const BRAND_LISTS_BY_COUNTRY = {
       biggerBreak: ["Kmart", "Big W", "Target"],
     },
     placeholders: { start: "Sydney", destination: "Melbourne" },
+    units: "metric",
   },
   US: {
     restaurants: [
@@ -62,6 +64,7 @@ const BRAND_LISTS_BY_COUNTRY = {
       biggerBreak: ["Target", "Walmart", "Kohl's", "Costco"],
     },
     placeholders: { start: "Austin", destination: "Dallas" },
+    units: "imperial",
   },
   GB: {
     restaurants: [
@@ -80,6 +83,7 @@ const BRAND_LISTS_BY_COUNTRY = {
       biggerBreak: ["Marks & Spencer", "Argos", "TK Maxx", "Next"],
     },
     placeholders: { start: "London", destination: "Manchester" },
+    units: "metric",
   },
   NZ: {
     restaurants: ["McDonald's", "KFC", "Burger King", "Subway", "Domino's", "Nando's", "Pita Pit"],
@@ -88,6 +92,7 @@ const BRAND_LISTS_BY_COUNTRY = {
       biggerBreak: ["The Warehouse", "Kmart", "Briscoes"],
     },
     placeholders: { start: "Auckland", destination: "Wellington" },
+    units: "metric",
   },
   CA: {
     restaurants: ["Tim Hortons", "McDonald's", "A&W", "Subway", "Burger King", "Wendy's", "KFC", "Domino's"],
@@ -96,6 +101,7 @@ const BRAND_LISTS_BY_COUNTRY = {
       biggerBreak: ["Canadian Tire", "Walmart", "Costco"],
     },
     placeholders: { start: "Toronto", destination: "Montreal" },
+    units: "metric",
   },
 };
 
@@ -108,4 +114,5 @@ const BRAND_LISTS_DEFAULT = {
     biggerBreak: ["Walmart", "Target"],
   },
   placeholders: { start: "Austin", destination: "Dallas" },
+  units: "imperial",
 };

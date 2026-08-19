@@ -14,7 +14,7 @@ needed to actually complete the trip.
 | `index.html` | The page structure — the form and the map area. |
 | `style.css` | How things look. |
 | `app.js` | The logic — looks up locations, gets a route, fetches chargers, draws pins. |
-| `brandLists.js` | Restaurant chain lists, shop brand lists, and example city-pair placeholders — all by country. |
+| `brandLists.js` | Restaurant chain lists, shop brand lists, example city-pair placeholders, and default units — all by country. |
 
 No installs, no build step, no server, no login. It's four plain files that
 run entirely in your browser.
@@ -109,6 +109,12 @@ run entirely in your browser.
    `brandLists.js` entries, same detected country, just placeholder text
    (never a real pre-filled value) so it doesn't show a US city pair
    regardless of where you are.
+8. **The mi/km and m/ft toggles also default from the detected country**
+   (metric for AU/GB/NZ/CA, imperial for US and anywhere undetected) —
+   but only as a *default*. The moment you click either toggle yourself,
+   that one stops following country updates (e.g. if the IP lookup
+   resolves a moment after you'd already switched it) — it's genuinely
+   your choice from then on, not something that can flip back on you.
 
 None of these services require you to sign up or pay for V1 — they're all
 free, public APIs meant for exactly this kind of light personal use.

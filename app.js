@@ -153,8 +153,20 @@ const legendItemsEl = document.getElementById("legend-items");
 const modeSpeedBtn = document.getElementById("mode-speed-btn");
 const modePlugBtn = document.getElementById("mode-plug-btn");
 
-unitMiBtn.addEventListener("click", () => setDistanceUnit("mi"));
-unitKmBtn.addEventListener("click", () => setDistanceUnit("km"));
+// Tracks whether you've manually picked a unit yourself, so a later country
+// refinement (e.g. IP lookup resolving after the locale guess) only ever
+// sets the *default* — it never overrides a choice you already made.
+let distanceUnitManuallySet = false;
+let amenityDistanceUnitManuallySet = false;
+
+unitMiBtn.addEventListener("click", () => {
+  distanceUnitManuallySet = true;
+  setDistanceUnit("mi");
+});
+unitKmBtn.addEventListener("click", () => {
+  distanceUnitManuallySet = true;
+  setDistanceUnit("km");
+});
 
 function setDistanceUnit(unit) {
   distanceUnit = unit;
@@ -196,8 +208,14 @@ function formatDistanceFromMiles(miles) {
 let amenityDistanceUnit = "m"; // "m" or "ft"
 let amenityDistanceMetersForSearch = 100; // overwritten on submit; matches the form's default
 
-amenityUnitMBtn.addEventListener("click", () => setAmenityDistanceUnit("m"));
-amenityUnitFtBtn.addEventListener("click", () => setAmenityDistanceUnit("ft"));
+amenityUnitMBtn.addEventListener("click", () => {
+  amenityDistanceUnitManuallySet = true;
+  setAmenityDistanceUnit("m");
+});
+amenityUnitFtBtn.addEventListener("click", () => {
+  amenityDistanceUnitManuallySet = true;
+  setAmenityDistanceUnit("ft");
+});
 
 function setAmenityDistanceUnit(unit) {
   amenityDistanceUnit = unit;
@@ -276,6 +294,7 @@ function setDetectedCountry(countryCode, tier) {
   renderChainChecks();
   renderShopChecks();
   renderPlaceholders();
+  renderUnitsDefault();
 
   if (countryChanged && tier < 3 && !mapCenteredPrecisely) {
     const view = getMapViewForCountry(countryCode);
@@ -350,6 +369,22 @@ function renderPlaceholders() {
   destinationInput.placeholder = `e.g. ${placeholders.destination}`;
 }
 
+// Sets the mi/km and m/ft toggles to the detected country's usual units —
+// but only the ones you haven't already clicked yourself. This only ever
+// sets a *default*; once you manually pick a unit, later country
+// refinements (IP lookup resolving after the locale guess, etc.) leave it
+// alone, per how setDetectedCountry() re-runs this on every update.
+function renderUnitsDefault() {
+  const units = getBrandListsForCountry(detectedCountryCode).units;
+
+  if (!distanceUnitManuallySet) {
+    setDistanceUnit(units === "metric" ? "km" : "mi");
+  }
+  if (!amenityDistanceUnitManuallySet) {
+    setAmenityDistanceUnit(units === "metric" ? "m" : "ft");
+  }
+}
+
 amenityRestaurantCheckbox.addEventListener("change", () => {
   chainPickerEl.hidden = !amenityRestaurantCheckbox.checked;
 });
@@ -361,6 +396,7 @@ amenityShopCheckbox.addEventListener("change", () => {
 renderChainChecks();
 renderShopChecks();
 renderPlaceholders();
+renderUnitsDefault();
 detectCountryFromIP();
 initUserLocation();
 
