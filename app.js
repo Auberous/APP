@@ -25,11 +25,58 @@
 // fine for it to be visible here in a public repo.
 const OCM_API_KEY = "73d5a487-00e9-40c6-b804-6210f537899b";
 
+// ---- Guess a starting country before anything else renders -----------------
+// The very first paint (map view, brand-picker lists) needs *some* country
+// to assume, before there's been any chance to ask for GPS permission or
+// look anything up. This uses only signals that need no permission prompt:
+// the browser's own locale first (instant, but can be wrong — e.g. a
+// company laptop imaged with English (US) as the OS language regardless of
+// where it's actually used), refined moments later by a permission-free
+// IP-based lookup (see detectCountryFromIP() below), refined again by GPS
+// if you grant it, and finally overridden by wherever "Start location" gets
+// geocoded to once you search — each of those is more trustworthy than the
+// last, so later signals win over earlier ones (see setDetectedCountry()).
+const FALLBACK_COUNTRY_CODE = "AU"; // used only if even the locale guess comes back empty
+
+const COUNTRY_MAP_VIEWS = {
+  AU: { center: [-25.27, 133.78], zoom: 4 },
+  US: { center: [39.5, -98.35], zoom: 4 },
+  GB: { center: [54.5, -3.0], zoom: 5 },
+  NZ: { center: [-41.5, 173.0], zoom: 5 },
+  CA: { center: [56.0, -106.0], zoom: 3 },
+};
+const DEFAULT_MAP_VIEW = { center: [20, 0], zoom: 2 }; // whole-world view for a country we don't have a view for
+
+function getMapViewForCountry(countryCode) {
+  return (countryCode && COUNTRY_MAP_VIEWS[countryCode]) || DEFAULT_MAP_VIEW;
+}
+
+function guessCountryFromLocale() {
+  const locale = navigator.language || (navigator.languages && navigator.languages[0]);
+  const region = locale && locale.split("-")[1];
+  return region ? region.toUpperCase() : null;
+}
+
+// Tracks both the current best guess and how confident it is, so a slower
+// but weaker signal (e.g. IP lookup, if it resolves late) can never
+// overwrite a stronger one that already arrived (e.g. GPS). Tiers, weakest
+// to strongest: 0 locale guess, 1 IP-based lookup, 2 GPS, 3 geocoded start
+// location. See setDetectedCountry() further down, where this is enforced.
+let detectedCountryCode = guessCountryFromLocale() || FALLBACK_COUNTRY_CODE;
+let detectedCountryTier = 0;
+
+// Set to true once the map has been precisely centered on a real location
+// (your GPS position) — once that's happened, a country-level "rough view"
+// update (from a same-or-lower-tier signal) shouldn't yank the map back
+// out to a whole-country zoom.
+let mapCenteredPrecisely = false;
+
 // ---- Set up the map --------------------------------------------------------
-// Starts zoomed out on a rough world view so the map isn't blank while we
-// wait on the location permission prompt below — initUserLocation() flies
-// it to your actual location as soon as (and if) you allow that.
-const map = L.map("map").setView([39.5, -98.35], 4);
+// Starts on a rough view of the guessed country above so the map isn't
+// blank/wrong-country while we wait on everything else — initUserLocation()
+// flies it to your actual location as soon as (and if) you allow that.
+const initialMapView = getMapViewForCountry(detectedCountryCode);
+const map = L.map("map").setView(initialMapView.center, initialMapView.zoom);
 
 // The map "tiles" (the actual picture of streets/land) come from OpenStreetMap,
 // a free, community-maintained map — no API key needed.
@@ -68,12 +115,6 @@ let preferredChainsForSearch = []; // specific chain names checked, e.g. ["McDon
 let preferredShopBrandsForSearch = []; // specific shop names checked (both tiers combined) — narrows "shop"
 let planStrategies = [];
 let selectedPlanKey = null;
-
-// Best guess at what country you're in, used to pick which chain list the
-// chain picker shows. Starts from your device's own locale, then gets
-// refined once we have a real location to go on (your GPS position on
-// load, or wherever "Start location" gets geocoded to).
-let detectedCountryCode = null;
 
 // Which unit distances are typed in and displayed in. All the actual
 // planning math elsewhere in this file works in miles regardless — this
@@ -176,12 +217,13 @@ function initUserLocation() {
   navigator.geolocation.getCurrentPosition(
     async (position) => {
       const { latitude, longitude } = position.coords;
+      mapCenteredPrecisely = true; // set before flyTo/setDetectedCountry so no rough country-view fights this
       map.flyTo([latitude, longitude], 11);
 
       try {
         const result = await reverseGeocode(latitude, longitude);
         startInput.value = result.label;
-        setDetectedCountry(result.countryCode);
+        setDetectedCountry(result.countryCode, 2);
       } catch (err) {
         console.error(err);
         startInput.value = "My Location";
@@ -217,23 +259,46 @@ async function reverseGeocode(lat, lon) {
 }
 
 // ---- Which country's chain list to show in the "specific chains" picker ---
-// Best guess starts from the device's own locale (e.g. browser language
-// "en-AU" implies "AU"), then gets replaced by a real signal as soon as one
-// is available — your GPS location on load, or wherever "Start location"
-// ends up getting geocoded to (see the submit handler below). Either of
-// those is more reliable than the locale guess, since a locale doesn't
-// necessarily match where you're actually driving.
-function guessCountryFromLocale() {
-  const locale = navigator.language || (navigator.languages && navigator.languages[0]);
-  const region = locale && locale.split("-")[1];
-  return region ? region.toUpperCase() : null;
-}
+// Updates the detected country, but only if the new signal is at least as
+// trustworthy as whatever set the current guess (see the tier comment
+// above, near where detectedCountryCode is first set) — so e.g. a slow-to-
+// resolve IP lookup can't undo a GPS fix that already arrived. Re-renders
+// the brand pickers, and — for the weaker, pre-search signals only — nudges
+// the map to a rough view of the new country, unless GPS has already
+// centered it precisely (a country-level view would be a downgrade then).
+function setDetectedCountry(countryCode, tier) {
+  if (!countryCode || tier < detectedCountryTier) return;
 
-function setDetectedCountry(countryCode) {
-  if (!countryCode || countryCode === detectedCountryCode) return;
+  const countryChanged = countryCode !== detectedCountryCode;
   detectedCountryCode = countryCode;
+  detectedCountryTier = tier;
   renderChainChecks();
   renderShopChecks();
+
+  if (countryChanged && tier < 3 && !mapCenteredPrecisely) {
+    const view = getMapViewForCountry(countryCode);
+    map.flyTo(view.center, view.zoom);
+  }
+}
+
+// A free, permission-free IP-based lookup — a cross-check for the locale
+// guess above, since a browser/OS locale doesn't always match where you
+// actually are (e.g. a work laptop set to English (US) while used
+// anywhere else). No prompt, unlike GPS: it just asks a public service
+// "what country does this connection look like it's coming from".
+async function detectCountryFromIP() {
+  try {
+    const response = await fetch("https://ipapi.co/json/");
+    if (!response.ok) throw new Error(`HTTP ${response.status}`);
+    const data = await response.json();
+    if (data.country_code) {
+      setDetectedCountry(data.country_code.toUpperCase(), 1);
+    }
+  } catch (err) {
+    // Not a real problem — the locale guess already in place, and GPS or
+    // the start location later, both still work fine without this.
+    console.info("IP-based country detection unavailable:", err.message);
+  }
 }
 
 // Looks up one country's brand lists, falling back to BRAND_LISTS_DEFAULT
@@ -282,9 +347,9 @@ amenityShopCheckbox.addEventListener("change", () => {
   shopPickerEl.hidden = !amenityShopCheckbox.checked;
 });
 
-detectedCountryCode = guessCountryFromLocale();
 renderChainChecks();
 renderShopChecks();
+detectCountryFromIP();
 initUserLocation();
 
 modeSpeedBtn.addEventListener("click", () => setColorMode("speed"));
@@ -336,7 +401,7 @@ form.addEventListener("submit", async (event) => {
     // Step 1: turn addresses into coordinates
     setStatus(`Looking up "${startText}"...`);
     const startCoord = await geocode(startText);
-    setDetectedCountry(startCoord.countryCode); // refines the chain/shop pickers to match where the trip actually starts
+    setDetectedCountry(startCoord.countryCode, 3); // most authoritative signal — overrides locale/IP/GPS guesses
     // Both only apply while their parent checkbox is checked — the brand
     // checkboxes stay in the DOM (hidden) when it's unchecked, so this
     // guards against a stale selection filtering results after someone's

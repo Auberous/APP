@@ -21,12 +21,22 @@ run entirely in your browser.
 
 ## How the pieces fit together
 
-0. **On load**, the app asks your browser for permission to use your
-   location. If you allow it, the map flies to where you are and "Start
-   location" is pre-filled with a short place name (you can still overwrite
-   it). If you say no, or your device doesn't support it, the app just
-   quietly falls back to a default world view and you type a start location
-   yourself — that's a normal outcome, not an error.
+0. **On load**, before anything needs your permission, the app guesses
+   your country from two permission-free signals — your browser's own
+   locale (instant) and a free IP-based lookup (arrives a moment later,
+   and wins if it disagrees with the locale guess, since a locale can be
+   wrong — e.g. a work laptop set to English (US) regardless of where it's
+   actually used). That guess sets the initial map view (a rough view of
+   your country, not a fixed US-centered default) and the starting lists
+   in the brand pickers described below. It then *does* ask your browser
+   for GPS permission — if you allow it, the map flies to your exact
+   position and "Start location" is pre-filled with a short place name
+   (you can still overwrite it), and GPS's country reading overrides the
+   locale/IP guess too, being more precise. If you say no, or your device
+   doesn't support it, the app quietly keeps the country-level guess and
+   you type a start location yourself — a normal outcome, not an error.
+   Whatever you actually type as your start location is the final word:
+   once it's geocoded, its country overrides all of the above.
 1. **You type** a start (or use the pre-filled one) and a destination, then
    click "Find Routes".
 2. **Nominatim** (OpenStreetMap's free search) turns that text into map
@@ -88,10 +98,9 @@ run entirely in your browser.
    Coles, Woolworths, 7-Eleven, etc.) and **Bigger break** (department/
    variety stores — Kmart, Target, Big W, etc.) — pick from either or both,
    they're combined into one filter. Which brands are listed depends on
-   your detected country (starts from your device's language setting, then
-   gets corrected once your GPS location or geocoded start location is
-   known — see `brandLists.js` for the lists, one entry per country with a
-   `restaurants` array and a `shops` object). Picking brands actually
+   your detected country (see step 0 above for how that's guessed and
+   refined — see `brandLists.js` for the lists, one entry per country with
+   a `restaurants` array and a `shops` object). Picking brands actually
    narrows the live Overpass query itself (matched by name), not just a
    label — it affects both the popup's "what's nearby" list and the
    "Family-friendly stops" plan matching.
@@ -163,10 +172,19 @@ you're ready — just say the word.
   matches whatever OpenStreetMap has in a place's "name" tag, so a
   misspelled or unusually-formatted listing could be missed, and it doesn't
   know about brands not yet in `brandLists.js` for your country (those fall
-  back to a short internationally-common list, which may not fit). Country
-  detection is a best guess too — locale first, corrected by GPS/start-
-  location geocoding as those come in — so it's occasionally wrong right
-  after the page loads, before either of those has resolved.
+  back to a short internationally-common list, which may not fit).
+- **Country detection is a best guess, refined over a few seconds, not a
+  setting you control directly.** It starts from your browser's locale
+  (instant but sometimes wrong — see step 0 above), then a free IP-lookup
+  service ([ipapi.co](https://ipapi.co), no key needed, ~1,000 lookups/day
+  on its free tier — plenty for personal use, but it's still a third-party
+  service that could be slow, blocked by a network, or occasionally down),
+  then GPS if you allow it, then your typed start location once you
+  search. If both locale and the IP lookup fail (e.g. offline, or the
+  service is unreachable), it falls back to a hardcoded default —
+  currently Australia, `FALLBACK_COUNTRY_CODE` near the top of `app.js` —
+  chosen as this app's primary market so far; a one-line change to swap it
+  for another country.
 - **The shop query now also looks for department/variety stores** (not
   just supermarkets/convenience like before), since that's the OSM tagging
   the "Bigger break" tier's brands (Kmart, Target, etc.) actually use. This
