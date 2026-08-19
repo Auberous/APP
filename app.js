@@ -526,6 +526,14 @@ async function selectRoute(index) {
     const chargers = await getChargersNearRoute(route);
     lastChargers = chargers;
 
+    // Kick off "what's nearby" lookups for every charger right away, in the
+    // background — not awaited, so it doesn't hold up anything below. By
+    // the time you actually click a pin or pick a charging plan, the
+    // amenity info is usually already cached and appears instantly instead
+    // of showing "Checking what's nearby..." for a few seconds. See
+    // preloadAmenities() for how it stays polite to Overpass's rate limits.
+    preloadAmenities(chargers);
+
     // Step 4b: if a range was given, work out a few different charging-plan
     // strategies and let the plan-picker boxes handle drawing pins for
     // whichever one is selected (starting with the first, "Fewest stops").
@@ -1279,6 +1287,60 @@ function getPlugCategory(charger) {
 
 function getMarkerCategory(charger) {
   return colorMode === "plug" ? getPlugCategory(charger) : getSpeedCategory(charger);
+}
+
+// Counts up every time a route is selected. A background preload started
+// for an earlier route checks this before each fetch and quietly bails out
+// once it no longer matches — e.g. you clicked a different route option
+// while the previous one's preload was still working through its list.
+let preloadGeneration = 0;
+
+// Quietly fetches "what's nearby" for every charger passed in, a few at a
+// time, and caches each result on the charger object itself — the exact
+// same cache popups and plan stops already check before fetching, so this
+// is purely a head start, not a separate code path. Runs PRELOAD_CONCURRENCY
+// requests at once (not all of them at once) to stay polite to Overpass's
+// free rate limits, and any failures are silent here — if a preload fetch
+// fails, the popup or plan simply fetches it fresh (and shows its own error
+// if that fails too) the normal way when you actually need it.
+const PRELOAD_CONCURRENCY = 3;
+
+async function preloadAmenities(chargers) {
+  const myGeneration = ++preloadGeneration;
+
+  // Captured once, at the start, rather than read fresh per-charger — so a
+  // mid-flight change to the "within" distance or chain/shop picks (from a
+  // brand-new search) can't mix results fetched with two different settings
+  // into the same preload run.
+  const radius = amenityDistanceMetersForSearch;
+  const chains = preferredChainsForSearch;
+  const shopBrands = preferredShopBrandsForSearch;
+
+  const queue = chargers.filter(
+    (c) => c.AddressInfo && c.AddressInfo.Latitude != null && c.AddressInfo.Longitude != null
+  );
+  let nextIndex = 0;
+
+  async function worker() {
+    while (nextIndex < queue.length) {
+      if (myGeneration !== preloadGeneration) return; // a different route was picked meanwhile
+      const charger = queue[nextIndex++];
+      if (charger._amenityInfo) continue; // already fetched (e.g. by a plan strategy check)
+      try {
+        charger._amenityInfo = await fetchNearbyAmenities(
+          charger.AddressInfo.Latitude,
+          charger.AddressInfo.Longitude,
+          radius,
+          chains,
+          shopBrands
+        );
+      } catch (err) {
+        // Silent on purpose — see the function comment above.
+      }
+    }
+  }
+
+  await Promise.all(Array.from({ length: PRELOAD_CONCURRENCY }, worker));
 }
 
 function drawChargers(chargers) {

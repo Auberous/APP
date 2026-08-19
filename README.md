@@ -50,7 +50,12 @@ run entirely in your browser.
    to grey) and the map zooms to it, then **Open Charge Map** is asked
    "what chargers are near this route?" — each one gets a pin, and the
    status line above the map gives a quick breakdown, e.g. "Found 14
-   chargers near this route (5 rapid, 7 fast, 2 slow)."
+   chargers near this route (5 rapid, 7 fast, 2 slow)." At this same moment,
+   the app also quietly starts looking up "what's nearby" for every one of
+   those chargers in the background (see the "preloading" limitation below)
+   — so by the time you actually open a pin or pick a charging plan, that
+   info is usually already sitting there ready, instead of you watching
+   "Checking what's nearby..." for a few seconds.
 4. Each pin is **colored by charging speed or plug type** (whichever you pick
    with the toggle above the map) — a legend explains what the colors mean.
    Click any pin for the full details: address, every connector it has, and
@@ -58,8 +63,9 @@ run entirely in your browser.
    supermarkets/shops within the distance you set in the form (100m by
    default), each with its walking distance from the charger (e.g.
    "McDonald's — 350 ft"), fetched from OpenStreetMap's free **Overpass**
-   service the moment you open that pin's popup (only once per charger;
-   reopening the same popup later doesn't re-fetch it). Only the 3 nearest
+   service — usually already preloaded by step 3 above, but fetched on the
+   spot if not (only once per charger either way; reopening the same popup
+   later doesn't re-fetch it). Only the 3 nearest
    per category are listed, with a "+N more" note if there are others.
 5. **If you entered a range**, a second row of boxes appears — charging
    *strategies* for that specific route:
@@ -222,6 +228,16 @@ you're ready — just say the word.
   Console) — every amenity lookup logs the radius, the chain/shop brand
   list actually used, the raw Overpass query, and the counts that came
   back, so it's possible to see exactly what was searched for.
+- **"What's nearby" is preloaded in the background** for every charger the
+  moment a route is picked, 3 chargers at a time, rather than waiting until
+  you open a pin or select a plan — so it's usually instant when you get
+  there. This means a route with a lot of chargers now sends a burst of
+  extra Overpass requests up front even for chargers you never end up
+  looking at, which is a fair trade for occasional personal use but worth
+  knowing about since Overpass is a shared free service (see the rate-limit
+  note above). If you pick a different route before an earlier route's
+  preload finishes, that stale preload quietly stops itself rather than
+  wasting further requests on chargers you're no longer looking at.
 - **Brand logos are fetched live from a free logo-by-domain service**
   (Clearbit's logo API), using the `domain` recorded for each brand in
   `brandLists.js` — not files stored in this project. Two things worth
