@@ -10,6 +10,7 @@
  *   {
  *     restaurants: [...],                      // flat list
  *     shops: { quickStop: [...], biggerBreak: [...] },  // two tiers
+ *     placeholders: { start: "...", destination: "..." },  // example city pair
  *   }
  *
  * To add a new country: add one more "XX": {...} entry below, keyed by its
@@ -41,6 +42,7 @@ const BRAND_LISTS_BY_COUNTRY = {
       quickStop: ["Coles", "Woolworths", "Aldi", "IGA", "7-Eleven"],
       biggerBreak: ["Kmart", "Big W", "Target"],
     },
+    placeholders: { start: "Sydney", destination: "Melbourne" },
   },
   US: {
     restaurants: [
@@ -59,6 +61,7 @@ const BRAND_LISTS_BY_COUNTRY = {
       quickStop: ["7-Eleven", "Walgreens", "CVS", "Trader Joe's", "Wawa"],
       biggerBreak: ["Target", "Walmart", "Kohl's", "Costco"],
     },
+    placeholders: { start: "Austin", destination: "Dallas" },
   },
   GB: {
     restaurants: [
@@ -76,6 +79,7 @@ const BRAND_LISTS_BY_COUNTRY = {
       quickStop: ["Tesco Express", "Sainsbury's Local", "Co-op", "Spar", "Aldi"],
       biggerBreak: ["Marks & Spencer", "Argos", "TK Maxx", "Next"],
     },
+    placeholders: { start: "London", destination: "Manchester" },
   },
   NZ: {
     restaurants: ["McDonald's", "KFC", "Burger King", "Subway", "Domino's", "Nando's", "Pita Pit"],
@@ -83,6 +87,7 @@ const BRAND_LISTS_BY_COUNTRY = {
       quickStop: ["Countdown", "New World", "Pak'nSave", "Four Square"],
       biggerBreak: ["The Warehouse", "Kmart", "Briscoes"],
     },
+    placeholders: { start: "Auckland", destination: "Wellington" },
   },
   CA: {
     restaurants: ["Tim Hortons", "McDonald's", "A&W", "Subway", "Burger King", "Wendy's", "KFC", "Domino's"],
@@ -90,6 +95,7 @@ const BRAND_LISTS_BY_COUNTRY = {
       quickStop: ["Loblaws", "Sobeys", "Metro", "Shoppers Drug Mart", "Circle K"],
       biggerBreak: ["Canadian Tire", "Walmart", "Costco"],
     },
+    placeholders: { start: "Toronto", destination: "Montreal" },
   },
 };
 
@@ -101,4 +107,5 @@ const BRAND_LISTS_DEFAULT = {
     quickStop: ["7-Eleven", "Aldi"],
     biggerBreak: ["Walmart", "Target"],
   },
+  placeholders: { start: "Austin", destination: "Dallas" },
 };

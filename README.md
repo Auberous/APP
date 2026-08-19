@@ -14,7 +14,7 @@ needed to actually complete the trip.
 | `index.html` | The page structure — the form and the map area. |
 | `style.css` | How things look. |
 | `app.js` | The logic — looks up locations, gets a route, fetches chargers, draws pins. |
-| `brandLists.js` | Restaurant chain and shop brand lists by country, used by the "specific chains"/"specific shops" pickers. |
+| `brandLists.js` | Restaurant chain lists, shop brand lists, and example city-pair placeholders — all by country. |
 
 No installs, no build step, no server, no login. It's four plain files that
 run entirely in your browser.
@@ -104,6 +104,11 @@ run entirely in your browser.
    narrows the live Overpass query itself (matched by name), not just a
    label — it affects both the popup's "what's nearby" list and the
    "Family-friendly stops" plan matching.
+7. **The Start location/Destination example text is country-specific too**
+   (e.g. "Sydney"/"Melbourne" for AU, "Austin"/"Dallas" for US) — same
+   `brandLists.js` entries, same detected country, just placeholder text
+   (never a real pre-filled value) so it doesn't show a US city pair
+   regardless of where you are.
 
 None of these services require you to sign up or pay for V1 — they're all
 free, public APIs meant for exactly this kind of light personal use.

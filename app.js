@@ -124,6 +124,7 @@ const KM_PER_MILE = 1.60934;
 
 const form = document.getElementById("trip-form");
 const startInput = document.getElementById("start");
+const destinationInput = document.getElementById("destination");
 const rangeInput = document.getElementById("range");
 const rangeLabelEl = document.getElementById("range-label");
 const unitMiBtn = document.getElementById("unit-mi-btn");
@@ -274,6 +275,7 @@ function setDetectedCountry(countryCode, tier) {
   detectedCountryTier = tier;
   renderChainChecks();
   renderShopChecks();
+  renderPlaceholders();
 
   if (countryChanged && tier < 3 && !mapCenteredPrecisely) {
     const view = getMapViewForCountry(countryCode);
@@ -339,6 +341,15 @@ function renderShopChecks() {
   renderBrandChecklist(shopBiggerBreakChecksEl, shops.biggerBreak);
 }
 
+// Swaps the Start/Destination example text (placeholder only — never the
+// actual value) for a city pair from the detected country, so a US example
+// like "Austin"/"Dallas" doesn't show up regardless of where you are.
+function renderPlaceholders() {
+  const placeholders = getBrandListsForCountry(detectedCountryCode).placeholders;
+  startInput.placeholder = `e.g. ${placeholders.start}`;
+  destinationInput.placeholder = `e.g. ${placeholders.destination}`;
+}
+
 amenityRestaurantCheckbox.addEventListener("change", () => {
   chainPickerEl.hidden = !amenityRestaurantCheckbox.checked;
 });
@@ -349,6 +360,7 @@ amenityShopCheckbox.addEventListener("change", () => {
 
 renderChainChecks();
 renderShopChecks();
+renderPlaceholders();
 detectCountryFromIP();
 initUserLocation();
 
@@ -367,7 +379,7 @@ form.addEventListener("submit", async (event) => {
   event.preventDefault(); // stop the page from reloading on submit
 
   const startText = startInput.value.trim();
-  const destText = document.getElementById("destination").value.trim();
+  const destText = destinationInput.value.trim();
   const rangeValue = parseFloat(rangeInput.value);
   hasRangeForSearch = Number.isFinite(rangeValue) && rangeValue > 0;
   // Planning math elsewhere in this file always works in miles, so convert

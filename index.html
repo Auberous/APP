@@ -22,12 +22,16 @@
   <form id="trip-form">
     <div class="field">
       <label for="start">Start location</label>
-      <input id="start" type="text" placeholder="e.g. Austin, TX" required />
+      <!-- Placeholder text below is a static fallback only — app.js swaps
+           it for a country-appropriate example (renderPlaceholders()) the
+           moment it runs, using the same country detection as the brand
+           pickers. -->
+      <input id="start" type="text" placeholder="e.g. Austin" required />
     </div>
 
     <div class="field">
       <label for="destination">Destination</label>
-      <input id="destination" type="text" placeholder="e.g. Dallas, TX" required />
+      <input id="destination" type="text" placeholder="e.g. Dallas" required />
     </div>
 
     <div class="field">
@@ -126,7 +130,7 @@
   <!-- Leaflet's JavaScript library -->
   <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
   <!-- The brand lists behind the "specific chains"/"specific shops" pickers, by country. -->
-  <script src="brandLists.js?v=1"></script>
-  <script src="app.js?v=11"></script>
+  <script src="brandLists.js?v=2"></script>
+  <script src="app.js?v=12"></script>
 </body>
 </html>
