@@ -913,9 +913,10 @@ const MAX_SAMPLE_POINTS = 12;
 // This is the actual on-route filter: after combining every sample
 // point's results, anything further than this from the route line itself
 // is dropped entirely, rather than kept around for the map, the plan, and
-// every background amenity check to deal with. A charger just off a
-// highway exit still easily qualifies; one in a different town over does not.
-const MAX_ONROUTE_DETOUR_MILES = 3;
+// every background amenity check to deal with. Kept tight on purpose — a
+// charger right off a highway exit still qualifies; anything requiring a
+// real detour, even a short one, does not.
+const MAX_ONROUTE_DETOUR_MILES = 1;
 
 async function getChargersNearRoute(route) {
   const samplePoints = pickSamplePoints(route);
