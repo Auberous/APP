@@ -905,6 +905,18 @@ const SAMPLE_SPACING_MILES = 40;
 const SEARCH_RADIUS_MILES = 25;
 const MAX_SAMPLE_POINTS = 12;
 
+// SEARCH_RADIUS_MILES has to be fairly wide so a search centered on one
+// sample point doesn't miss chargers sitting between it and the next one
+// 40 miles down the road — but that same width means it also pulls in
+// plenty of chargers nowhere near the road you're actually driving (a
+// whole cluster in a city sitting off to one side of the route, say).
+// This is the actual on-route filter: after combining every sample
+// point's results, anything further than this from the route line itself
+// is dropped entirely, rather than kept around for the map, the plan, and
+// every background amenity check to deal with. A charger just off a
+// highway exit still easily qualifies; one in a different town over does not.
+const MAX_ONROUTE_DETOUR_MILES = 3;
+
 async function getChargersNearRoute(route) {
   const samplePoints = pickSamplePoints(route);
 
@@ -932,7 +944,30 @@ async function getChargersNearRoute(route) {
     );
   }
 
-  return Array.from(chargersById.values());
+  // Keep only chargers genuinely close to the route itself — see
+  // MAX_ONROUTE_DETOUR_MILES above. One without usable coordinates at all
+  // is dropped here too, rather than left to cause trouble later.
+  const routeIndex = buildRouteIndex(route);
+  const allFound = Array.from(chargersById.values());
+  const withCoords = allFound.filter((c) => c.AddressInfo?.Latitude != null && c.AddressInfo?.Longitude != null);
+  const onRoute = withCoords.filter(
+    (charger) => locateChargerOnRoute(charger, routeIndex).detourMiles <= MAX_ONROUTE_DETOUR_MILES
+  );
+
+  // On a genuinely sparse stretch of road, tightening to MAX_ONROUTE_DETOUR_MILES
+  // could occasionally leave nothing at all even though something usable
+  // exists a bit further off — a real regression, not the point of this
+  // filter. Rather than risk that, fall back to every charger actually
+  // found (the exact behavior before this filter existed) whenever the
+  // on-route filter would otherwise leave you with zero options.
+  const result = onRoute.length > 0 ? onRoute : withCoords;
+
+  console.log(
+    `[chargers] ${allFound.length} found near the route, ${onRoute.length} within ${MAX_ONROUTE_DETOUR_MILES} miles of it` +
+      (onRoute.length === 0 && withCoords.length > 0 ? " — none that close, falling back to all of them" : "")
+  );
+
+  return result;
 }
 
 // Picks evenly-spaced points along the route line, roughly one every

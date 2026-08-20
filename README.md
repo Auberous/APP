@@ -216,10 +216,19 @@ you're ready — just say the word.
 
 ## Known V1 limitations (on purpose, to keep things simple)
 
-- **"Near the route" is approximate.** Chargers are found by searching
-  within 25 miles of points sampled every ~40 miles along your route —
-  close to the actual road, but not a precise "chargers exactly on this
-  road" search. The advisor's stop plan inherits this same approximation.
+- **"Near the route" is approximate, in two stages.** Chargers are first
+  found by searching within 25 miles of points sampled every ~40 miles
+  along your route — wide on purpose, so a search centered on one sample
+  doesn't miss anything sitting between it and the next one 40 miles down
+  the road. Then, before anything's shown, that combined list is filtered
+  down to only chargers within about 3 miles of the route line itself
+  (`MAX_ONROUTE_DETOUR_MILES` in `app.js`) — cutting out things like a
+  whole cluster of chargers in a city sitting off to one side of the road
+  you're actually driving. If that tighter filter would leave literally
+  nothing (a genuinely sparse stretch of road), it falls back to every
+  charger actually found rather than wrongly showing none at all. Still
+  not a precise "chargers exactly on this road" search either way — the
+  advisor's stop plan inherits this same approximation.
 - **The plan assumes a full recharge at every stop**, and doesn't know
   anything about a charger's real-world reliability, wait times, or
   whether it was still operating recently — just that Open Charge Map has
