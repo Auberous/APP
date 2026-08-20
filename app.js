@@ -208,16 +208,6 @@ function formatDistanceFromMiles(miles) {
 let amenityDistanceUnit = "m"; // "m" or "ft"
 let amenityDistanceMetersForSearch = 100; // overwritten on submit; matches the form's default
 
-// The radius actually sent to Overpass for every charger's amenity fetch.
-// Normally the same as amenityDistanceMetersForSearch, but widened (see
-// familyTierRadiusMeters below) whenever at least one "prefer stops near"
-// box is checked — so a single fetch per charger, at the widest radius
-// anything might need, can serve the "what's nearby" display (narrowed
-// back down at render time — see summarizeAmenities) AND the wider
-// "Family-friendly stops" distance tiers, without a second round of
-// Overpass requests for the same charger.
-let activeAmenityFetchRadiusMeters = 100; // overwritten on submit
-
 amenityUnitMBtn.addEventListener("click", () => {
   amenityDistanceUnitManuallySet = true;
   setAmenityDistanceUnit("m");
@@ -456,16 +446,6 @@ form.addEventListener("submit", async (event) => {
         : amenityDistanceValue
       : 100; // fall back to the default if left blank/invalid
 
-  // Only widen the fetch radius when it might actually be needed — the
-  // wider tiers only exist to help "Family-friendly stops" find a match,
-  // and that plan only gets built at all if you both checked a "prefer
-  // stops near" box AND entered a car range (no range means no charging
-  // plan of any kind, family or otherwise).
-  activeAmenityFetchRadiusMeters =
-    preferredAmenitiesForSearch.length > 0 && hasRangeForSearch
-      ? familyTierRadiusMeters(amenityDistanceMetersForSearch, FAMILY_DISTANCE_TIERS[FAMILY_DISTANCE_TIERS.length - 1])
-      : amenityDistanceMetersForSearch;
-
   setLoading(true);
   clearEverything();
   routePickerEl.hidden = true;
@@ -546,17 +526,15 @@ async function selectRoute(index) {
     const chargers = await getChargersNearRoute(route);
     lastChargers = chargers;
 
-    // Kick off "what's nearby" lookups for every charger right away, in the
-    // background — not awaited, so it doesn't hold up anything below. By
-    // the time you actually click a pin or pick a charging plan, the
-    // amenity info is usually already cached and appears instantly instead
-    // of showing "Checking what's nearby..." for a few seconds. See
-    // preloadAmenities() for how it stays polite to Overpass's rate limits.
-    preloadAmenities(chargers);
-
     // Step 4b: if a range was given, work out a few different charging-plan
     // strategies and let the plan-picker boxes handle drawing pins for
     // whichever one is selected (starting with the first, "Fewest stops").
+    // This also kicks off that plan's own "what's nearby" lookups (see
+    // renderPlan/loadStopAmenitiesForPlan) — done here, before the general
+    // preload below, so the handful of stops you're actually looking at
+    // get first claim on the browser's connection pool, instead of queuing
+    // behind a preload request for some charger you haven't even scrolled
+    // to yet.
     if (hasRangeForSearch) {
       setStatus("Working out charging plan options...");
       planStrategies = buildPlanStrategies(chargers, route, rangeMilesForSearch);
@@ -566,6 +544,15 @@ async function selectRoute(index) {
       // Step 5: no range given, so just draw every nearby charger.
       drawChargers(chargers);
     }
+
+    // Now quietly fetch "what's nearby" for every *other* charger too, in
+    // the background — not awaited, so it doesn't hold up anything below.
+    // By the time you click a different pin or plan, that info is usually
+    // already cached and appears instantly instead of showing "Checking
+    // what's nearby..." for a few seconds. See preloadAmenities() for how
+    // it stays polite to Overpass's rate limits, and getAmenityInfo() for
+    // why this never duplicates a fetch the plan above already started.
+    preloadAmenities(chargers);
 
     if (chargers.length === 0) {
       setStatus("Route found, but no chargers turned up nearby. Try a different route option.");
@@ -1066,30 +1053,16 @@ async function planFamilyTierStops(chargers, route, rangeMiles, preferredAmeniti
 }
 
 // Checks whether a charger has every one of the preferred amenities within
-// a given radius (whichever distance tier is being tried). Fetches (and
-// caches, on the charger itself) the raw amenity data at the widest radius
-// anything in the app might need — see activeAmenityFetchRadiusMeters — so
-// checking the same charger against a second, looser tier right after
-// never means a second network request, just a re-filter of data already
-// in hand (see summarizeAmenities). A failed fetch counts as "no match"
-// rather than stopping the whole plan.
+// a given radius (whichever distance tier is being tried). A failed fetch
+// counts as "no match" rather than stopping the whole plan.
 async function candidateMatchesAmenitiesAtRadius(charger, preferredAmenities, radiusMeters) {
-  if (!charger._amenityInfo) {
-    try {
-      charger._amenityInfo = await fetchNearbyAmenities(
-        charger.AddressInfo.Latitude,
-        charger.AddressInfo.Longitude,
-        activeAmenityFetchRadiusMeters,
-        preferredChainsForSearch,
-        preferredShopBrandsForSearch
-      );
-    } catch (err) {
-      console.error("Amenity check failed for a candidate charger:", err);
-      return false;
-    }
+  try {
+    const info = await getAmenityInfo(charger, radiusMeters);
+    return preferredAmenities.every((key) => info[key].count > 0);
+  } catch (err) {
+    console.error("Amenity check failed for a candidate charger:", err);
+    return false;
   }
-  const summary = summarizeAmenities(charger._amenityInfo, radiusMeters);
-  return preferredAmenities.every((key) => summary[key].count > 0);
 }
 
 // Fills in the plan-picker boxes: one per strategy, showing how many stops
@@ -1222,27 +1195,17 @@ async function loadSingleStopAmenities(stop) {
   const charger = stop.charger;
   const getBlock = () => planContentEl.querySelector(`[data-stop-charger-id="${charger.ID}"]`);
 
-  if (!charger._amenityInfo) {
-    try {
-      charger._amenityInfo = await fetchNearbyAmenities(
-        charger.AddressInfo.Latitude,
-        charger.AddressInfo.Longitude,
-        activeAmenityFetchRadiusMeters,
-        preferredChainsForSearch,
-        preferredShopBrandsForSearch
-      );
-    } catch (err) {
-      console.error("Amenity lookup failed for a plan stop:", err);
-      // The plan may have been swapped for a different strategy while this
-      // was in flight — if so, this element no longer exists, and that's fine.
-      const el = getBlock();
-      if (el) el.textContent = "Couldn't check what's nearby right now.";
-      return;
-    }
+  try {
+    const info = await getAmenityInfo(charger, amenityDistanceMetersForSearch);
+    const el = getBlock();
+    if (el) el.innerHTML = renderAmenitiesHtml(info);
+  } catch (err) {
+    console.error("Amenity lookup failed for a plan stop:", err);
+    // The plan may have been swapped for a different strategy while this
+    // was in flight — if so, this element no longer exists, and that's fine.
+    const el = getBlock();
+    if (el) el.textContent = "Couldn't check what's nearby right now.";
   }
-
-  const el = getBlock();
-  if (el) el.innerHTML = renderAmenitiesHtml(summarizeAmenities(charger._amenityInfo, amenityDistanceMetersForSearch));
 }
 
 function drawPlanStops(stops) {
@@ -1373,12 +1336,10 @@ async function preloadAmenities(chargers) {
   const myGeneration = ++preloadGeneration;
 
   // Captured once, at the start, rather than read fresh per-charger — so a
-  // mid-flight change to the "within" distance or chain/shop picks (from a
-  // brand-new search) can't mix results fetched with two different settings
-  // into the same preload run.
-  const radius = activeAmenityFetchRadiusMeters;
-  const chains = preferredChainsForSearch;
-  const shopBrands = preferredShopBrandsForSearch;
+  // mid-flight change to the "within" distance (from a brand-new search)
+  // can't mix results fetched at two different radii into the same
+  // preload run.
+  const radius = amenityDistanceMetersForSearch;
 
   const queue = chargers.filter(
     (c) => c.AddressInfo && c.AddressInfo.Latitude != null && c.AddressInfo.Longitude != null
@@ -1389,15 +1350,8 @@ async function preloadAmenities(chargers) {
     while (nextIndex < queue.length) {
       if (myGeneration !== preloadGeneration) return; // a different route was picked meanwhile
       const charger = queue[nextIndex++];
-      if (charger._amenityInfo) continue; // already fetched (e.g. by a plan strategy check)
       try {
-        charger._amenityInfo = await fetchNearbyAmenities(
-          charger.AddressInfo.Latitude,
-          charger.AddressInfo.Longitude,
-          radius,
-          chains,
-          shopBrands
-        );
+        await getAmenityInfo(charger, radius); // shares the plan/popup cache — see getAmenityInfo
       } catch (err) {
         // Silent on purpose — see the function comment above.
       }
@@ -1485,34 +1439,22 @@ const AMENITY_TYPES = [
 async function loadNearbyAmenities(marker, charger) {
   const getBlock = () => marker.getPopup()?.getElement()?.querySelector(".amenities-block");
 
-  // charger._amenityInfo may already be cached — either from a previous
-  // popup open, or from the "Family-friendly stops" plan strategy having
-  // already checked this exact charger while building its plan. Either way
-  // it was checked using the "within" distance set at search time.
-  if (!charger._amenityInfo) {
-    try {
-      charger._amenityInfo = await fetchNearbyAmenities(
-        charger.AddressInfo.Latitude,
-        charger.AddressInfo.Longitude,
-        activeAmenityFetchRadiusMeters,
-        preferredChainsForSearch,
-        preferredShopBrandsForSearch
-      );
-    } catch (err) {
-      console.error("Overpass amenity lookup failed:", err);
-      const el = getBlock();
-      if (el) el.textContent = "Couldn't check what's nearby right now.";
-      return;
-    }
+  // charger._amenityInfoByRadius may already have this exact radius cached
+  // — either from a previous popup open, from the background preload, or
+  // from the "Family-friendly stops" plan strategy having already checked
+  // this exact charger at this exact distance while building its plan.
+  try {
+    const info = await getAmenityInfo(charger, amenityDistanceMetersForSearch);
+    // The popup may have been closed (or a different one opened) while the
+    // fetch was in flight, so re-find the element fresh rather than reuse
+    // a stale reference from before the await.
+    const el = getBlock();
+    if (el) el.innerHTML = renderAmenitiesHtml(info);
+  } catch (err) {
+    console.error("Overpass amenity lookup failed:", err);
+    const el = getBlock();
+    if (el) el.textContent = "Couldn't check what's nearby right now.";
   }
-
-  // The popup may have been closed (or a different one opened) while the
-  // fetch was in flight, so re-find the element fresh rather than reuse
-  // a stale reference from before the await. Narrowed back down to the
-  // "within" distance you actually typed — the raw fetch above may have
-  // used a wider radius (see activeAmenityFetchRadiusMeters).
-  const el = getBlock();
-  if (el) el.innerHTML = renderAmenitiesHtml(summarizeAmenities(charger._amenityInfo, amenityDistanceMetersForSearch));
 }
 
 // Builds an Overpass tag filter like ["name"~"McDonald's|KFC",i], or an
@@ -1594,39 +1536,48 @@ async function fetchNearbyAmenities(lat, lon, radiusMeters, preferredChains = []
     });
   });
 
-  // Kept as full sorted lists here, not yet trimmed to a display count or
-  // filtered to a specific radius — this is the raw material cached on the
-  // charger and reused for both "what's nearby" display and every distance
-  // tier the "Family-friendly stops" plan might check (see
-  // summarizeAmenities), all from this one Overpass request.
   const result = {};
   Object.keys(found).forEach((key) => {
-    result[key] = { items: found[key].sort((a, b) => a.distanceMeters - b.distanceMeters) };
+    const sorted = found[key].sort((a, b) => a.distanceMeters - b.distanceMeters);
+    result[key] = { count: sorted.length, items: sorted.slice(0, AMENITY_LIST_LIMIT) };
   });
 
   console.log(
-    `[amenities] results near (${lat.toFixed(5)}, ${lon.toFixed(5)}), searched within ${radiusMeters}m:`,
-    Object.fromEntries(Object.entries(result).map(([key, v]) => [key, v.items.length]))
+    `[amenities] results near (${lat.toFixed(5)}, ${lon.toFixed(5)}):`,
+    Object.fromEntries(Object.entries(result).map(([key, v]) => [key, v.count]))
   );
 
   return result;
 }
 
-// Turns the full (wide-radius) raw amenity data cached on a charger — see
-// fetchNearbyAmenities — into the count/nearest-items view actually shown
-// or checked against, for one specific radius (which may well be narrower
-// than the radius originally used to fetch it). Items are already sorted
-// nearest-first, so this is a plain in-memory filter — it never touches
-// the network, however many different radii it's asked about for the same
-// charger (the "what's nearby" display's radius, plus each distance tier
-// the family-friendly plan tries).
-function summarizeAmenities(rawInfo, radiusMeters, limit = AMENITY_LIST_LIMIT) {
-  const summary = {};
-  Object.keys(rawInfo).forEach((key) => {
-    const withinRadius = rawInfo[key].items.filter((item) => item.distanceMeters <= radiusMeters);
-    summary[key] = { count: withinRadius.length, items: withinRadius.slice(0, limit) };
-  });
-  return summary;
+// The single place every part of the app asks for a charger's "what's
+// nearby" info, for a specific radius. Caches the *promise*, not just the
+// eventual result, keyed by that exact radius (rounded, to avoid two
+// almost-identical floating point numbers — e.g. from a ft-to-m conversion
+// — missing each other and causing a needless duplicate fetch) — so if the
+// background preload, a map pin you clicked, and the currently-selected
+// plan all ask about the same charger and radius around the same moment,
+// only one real Overpass request goes out; every caller shares that one
+// request's result. A charger checked at more than one radius (e.g. its
+// normal "what's nearby" distance, plus a wider "Family-friendly stops"
+// tier) gets a separate cache entry per radius, since a wider search can
+// turn up results a narrower one legitimately wouldn't have found.
+async function getAmenityInfo(charger, radiusMeters) {
+  const key = Math.round(radiusMeters);
+  charger._amenityInfoByRadius = charger._amenityInfoByRadius || {};
+  if (!charger._amenityInfoByRadius[key]) {
+    charger._amenityInfoByRadius[key] = fetchNearbyAmenities(
+      charger.AddressInfo.Latitude,
+      charger.AddressInfo.Longitude,
+      radiusMeters,
+      preferredChainsForSearch,
+      preferredShopBrandsForSearch
+    ).catch((err) => {
+      delete charger._amenityInfoByRadius[key]; // let a later call retry, rather than cache a failure forever
+      throw err;
+    });
+  }
+  return charger._amenityInfoByRadius[key];
 }
 
 // Distances here are short (under half a mile), so this shows them the way

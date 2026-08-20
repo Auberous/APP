@@ -210,10 +210,12 @@ you're ready — just say the word.
   technically exists further down the list of reachable chargers.
 - **The 3 "Family-friendly" distance tiers are fixed multiples** (1x, 5x,
   20x your typed "within" distance, capped at 5km total) — not something
-  you can currently set yourself. They're one Overpass fetch per charger
-  either way (at the widest radius any tier might need), so trying a wider
-  tier for a charger already checked at a narrower one is instant, not a
-  new network request.
+  you can currently set yourself. Checking a charger against a wider tier
+  is its own Overpass request (a wider search can find things a narrower
+  one legitimately wouldn't have), but every request result is cached and
+  shared everywhere else in the app that asks about that same charger at
+  that same distance — a map pin, a plan stop, and the background preload
+  all reuse one fetch rather than tripling it.
 - **Chain/brand matching is a name search, not a verified database** — it
   matches whatever OpenStreetMap has in a place's "name" tag, so a
   misspelled or unusually-formatted listing could be missed, and it doesn't
@@ -257,13 +259,23 @@ you're ready — just say the word.
 - **"What's nearby" is preloaded in the background** for every charger the
   moment a route is picked, 3 chargers at a time, rather than waiting until
   you open a pin or select a plan — so it's usually instant when you get
-  there. This means a route with a lot of chargers now sends a burst of
-  extra Overpass requests up front even for chargers you never end up
-  looking at, which is a fair trade for occasional personal use but worth
-  knowing about since Overpass is a shared free service (see the rate-limit
-  note above). If you pick a different route before an earlier route's
-  preload finishes, that stale preload quietly stops itself rather than
-  wasting further requests on chargers you're no longer looking at.
+  there. The default plan's own stops are requested first (before this
+  general preload even starts), so the handful of stops you're actually
+  looking at right away get first claim on the browser's connection pool
+  rather than queuing behind chargers you haven't looked at yet — but on a
+  slow connection, or right after a big route with lots of chargers, you
+  may still briefly see "Checking what's nearby..." for a stop before its
+  own request finishes. This also means a route with a lot of chargers now
+  sends a burst of extra Overpass requests up front even for chargers you
+  never end up looking at, which is a fair trade for occasional personal
+  use but worth knowing about since Overpass is a shared free service (see
+  the rate-limit note above). If you pick a different route before an
+  earlier route's preload finishes, that stale preload quietly stops
+  itself rather than wasting further requests on chargers you're no longer
+  looking at. Every amenity request anywhere in the app (a pin, a plan
+  stop, preload, a Family-friendly tier check) shares one cache per
+  charger-and-distance, so the same lookup is never fetched twice even if
+  several of these ask about it around the same moment.
 - **Brand logos are fetched live from a free logo-by-domain service**
   (Clearbit's logo API), using the `domain` recorded for each brand in
   `brandLists.js` — not files stored in this project. Two things worth
