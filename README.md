@@ -100,15 +100,18 @@ run entirely in your browser.
      These boxes take a moment longer to appear than the other 3, since
      each has to look candidates up rather than just doing math (see the
      limitations below for how that's cached/shared to keep it as light as
-     possible). **If you checked a "Prefer stops near" box, no plan is
+     possible). **If you checked a "Prefer stops near" box, no *plan* is
      shown at all until this check finishes** — deliberately, so you're
      never shown "Fewest stops" (which knows nothing about your amenity
      preference) and end up mistaking it for the real recommendation, or
-     picking a stop you wouldn't have actually chosen. A small notice
-     ("🔍 Finding the best stop near your preferred amenities...") appears
-     in the plan's place while that's in progress; once it's done, the
-     plan panel fills in directly with the best result found — you don't
-     have to notice and click a box yourself. If you didn't check any
+     picking a stop you wouldn't have actually chosen. (The map's regular
+     charger pins still appear right away, same as always — it's only the
+     numbered, recommended-stop plan that waits, not the underlying
+     charger data.) A small notice ("🔍 Finding the best stop near your
+     preferred amenities...") appears in the plan's place while that's in
+     progress; once it's done, the plan panel fills in directly with the
+     best result found — you don't have to notice and click a box
+     yourself. If you didn't check any
      "Prefer stops near" box, none of this applies — the plan appears
      immediately as soon as it's picked, same as always.
 

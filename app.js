@@ -556,9 +556,13 @@ async function selectRoute(index) {
       setStatus("Working out charging plan options...");
       planStrategies = buildPlanStrategies(chargers, route, rangeMilesForSearch);
       renderPlanOptions(planStrategies);
-      selectPlanStrategy(planStrategies[0].key);
-    } else if (!hasRangeForSearch) {
-      // Step 5: no range given, so just draw every nearby charger.
+      selectPlanStrategy(planStrategies[0].key); // draws the chargers too, via redrawChargerMarkers()
+    } else {
+      // No plan to hold back the map for — either there's no range (no
+      // plan at all, ever), or a plan is coming but only once the amenity
+      // check below finishes. Either way, the chargers themselves aren't
+      // "advice" — show them on the map right away, same as always; it's
+      // only the numbered, recommended-stop plan that waits.
       drawChargers(chargers);
     }
 
