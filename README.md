@@ -118,6 +118,18 @@ run entirely in your browser.
      yourself. If you didn't check any
      "Prefer stops near" box, none of this applies — the plan appears
      immediately as soon as it's picked, same as always.
+   - **Changing your mind after a plan is already showing works the same
+     way, automatically.** If a route's already picked and you then check
+     (or uncheck) "Food", tick a specific chain like McDonald's, pick a
+     shop brand, or adjust the "within" distance, the plan re-checks itself
+     against the new preference right away — no need to press "Find
+     Routes" again, since nothing about the route or the chargers on it
+     actually changed, only what you're looking for near them. The same
+     "🔍 Finding the best stop..." notice appears while that's happening,
+     and the plan updates in place once it's done. Unchecking every
+     "Prefer stops near" box falls back to the plain "Fewest stops" plan.
+     A few quick clicks in a row (e.g. ticking two chains back to back)
+     are debounced into one re-check rather than one per click.
 
    Pick a plan box to see that plan's stops as big numbered pins on the map,
    plus a written stop-by-stop plan above it. Each stop shows a compact row
@@ -281,7 +293,11 @@ you're ready — just say the word.
   stops**, not just when you click a pin — for a typical 2-4 stop plan
   that's a few extra Overpass requests each time you pick or switch plans.
   Results are cached per charger (shared with the map popups), so revisiting
-  the same plan or clicking a pin already shown in it is instant.
+  the same plan or clicking a pin already shown in it is instant — *until*
+  you change what you're looking for (see the live-update note above),
+  which deliberately clears that cache for every charger on the route, so
+  the next check/click is a fresh, correctly-filtered lookup rather than a
+  leftover answer from before you changed your mind.
 - **Debugging the amenity/brand search:** open the browser console (F12 →
   Console) — every amenity lookup logs the radius, the chain/shop brand
   list actually used, the raw Overpass query, and the counts that came

@@ -415,6 +415,27 @@ amenityShopCheckbox.addEventListener("change", () => {
   shopPickerEl.hidden = !amenityShopCheckbox.checked;
 });
 
+// If results are already showing and you change what you're looking for —
+// check/uncheck "Food", pick a specific chain like McDonald's, or adjust
+// the "within" distance — re-check the currently shown plan against that
+// new preference automatically, instead of making you press "Find Routes"
+// again for something that doesn't need a new route or a new charger
+// search at all. See scheduleLiveAmenityRefresh() — it's a safe no-op
+// until a route/plan actually exists to update. One delegated listener on
+// the form covers the parent checkboxes and every chain/shop checkbox,
+// including ones rendered after this listener was attached (country
+// detection can re-render the chain/shop lists at any time).
+form.addEventListener("change", (event) => {
+  const target = event.target;
+  if (!(target instanceof HTMLInputElement) || target.type !== "checkbox") return;
+  const isAmenityControl =
+    target.closest(".amenity-checks") || target.closest("#chain-checks") || target.closest("#shop-picker");
+  if (isAmenityControl) scheduleLiveAmenityRefresh();
+});
+amenityDistanceInput.addEventListener("input", scheduleLiveAmenityRefresh);
+amenityUnitMBtn.addEventListener("click", scheduleLiveAmenityRefresh);
+amenityUnitFtBtn.addEventListener("click", scheduleLiveAmenityRefresh);
+
 renderChainChecks();
 renderShopChecks();
 renderPlaceholders();
@@ -630,6 +651,115 @@ async function selectRoute(index) {
       planNoteEl.hidden = true; // safety net — never leave the "still checking" note stuck up on an error
       setLoading(false);
     }
+  }
+}
+
+// Reads every "prefer stops near" control in the form into the shared
+// preference variables every amenity search in the app uses. Used by the
+// live refresh below — unlike the submit handler's own version of this
+// (which deliberately reads the chain/shop checkboxes *after* geocoding,
+// in case that corrects the detected country and changes which chains are
+// even listed), there's no geocoding step here — the route and its
+// country are already settled — so everything can be read in one go.
+function readAmenityPreferencesFromForm() {
+  preferredAmenitiesForSearch = Array.from(amenityCheckboxes)
+    .filter((cb) => cb.checked)
+    .map((cb) => cb.value);
+  preferredChainsForSearch = amenityRestaurantCheckbox.checked
+    ? Array.from(chainChecksEl.querySelectorAll("input:checked")).map((cb) => cb.value)
+    : [];
+  preferredShopBrandsForSearch = amenityShopCheckbox.checked
+    ? Array.from(shopPickerEl.querySelectorAll("input:checked")).map((cb) => cb.value)
+    : [];
+
+  const amenityDistanceValue = parseFloat(amenityDistanceInput.value);
+  amenityDistanceMetersForSearch =
+    Number.isFinite(amenityDistanceValue) && amenityDistanceValue > 0
+      ? amenityDistanceUnit === "ft"
+        ? amenityDistanceValue / 3.28084
+        : amenityDistanceValue
+      : 100; // fall back to the default if left blank/invalid
+}
+
+// Debounced so ticking a few boxes in quick succession (e.g. two chains
+// back to back) triggers one re-check, not one per click.
+let liveAmenityRefreshTimer = null;
+
+function scheduleLiveAmenityRefresh() {
+  // Nothing to refresh if you haven't picked a route yet, or there's no
+  // range (so no plan of any kind exists to update) — in both cases the
+  // next "Find Routes" click picks up whatever's checked now, same as
+  // always. This makes it safe to wire this to every amenity control in
+  // the form unconditionally.
+  if (selectedRouteIndex === -1 || !hasRangeForSearch || !currentRoutes[selectedRouteIndex] || lastChargers.length === 0) {
+    return;
+  }
+  clearTimeout(liveAmenityRefreshTimer);
+  liveAmenityRefreshTimer = setTimeout(runLiveAmenityRefresh, 300);
+}
+
+async function runLiveAmenityRefresh() {
+  // Reuses the exact same generation counter selectRoute() uses — so
+  // changing a checkbox again while this is still running, or picking a
+  // different route entirely, correctly supersedes whichever check is now
+  // stale, the same way it already does between routes.
+  const myRouteGeneration = ++routeSelectionGeneration;
+  const route = currentRoutes[selectedRouteIndex];
+  const chargers = lastChargers;
+
+  readAmenityPreferencesFromForm();
+
+  // The chain/shop/radius filter just changed, so any amenity data cached
+  // for these chargers under the *old* filter can't be trusted anymore —
+  // clear it so every check below fetches fresh, correctly-filtered data
+  // instead of quietly reusing a stale answer (see getAmenityInfo).
+  chargers.forEach((charger) => {
+    charger._amenityInfoByRadius = {};
+  });
+
+  userPickedPlanManually = false; // changing what you're looking for is itself a fresh request for the best match
+
+  if (preferredAmenitiesForSearch.length === 0) {
+    // Every "prefer stops near" box just got unchecked — there's no
+    // family plan left to look for. Fall back to the plain "Fewest
+    // stops" plan, same as a route that never had a preference at all.
+    planNoteEl.hidden = true;
+    planStrategies = buildPlanStrategies(chargers, route, rangeMilesForSearch);
+    renderPlanOptions(planStrategies);
+    selectPlanStrategy(planStrategies[0].key);
+    return;
+  }
+
+  setStatus("Finding the best stop near your preferred amenities...");
+  planNoteEl.textContent =
+    "🔍 Finding the best stop near your preferred amenities — this takes a moment longer than the other plans, since it has to look candidates up rather than just doing math. Nothing's shown below until it has a real answer.";
+  planNoteEl.hidden = false;
+  planPickerEl.hidden = true;
+  planEl.hidden = true;
+
+  try {
+    const familyStrategies = await buildFamilyStrategies(
+      chargers,
+      route,
+      rangeMilesForSearch,
+      preferredAmenitiesForSearch
+    );
+    if (myRouteGeneration !== routeSelectionGeneration) return; // superseded by another change meanwhile
+
+    planNoteEl.hidden = true;
+    planStrategies = buildPlanStrategies(chargers, route, rangeMilesForSearch);
+    planStrategies.push(...familyStrategies);
+    renderPlanOptions(planStrategies);
+    if (!userPickedPlanManually) {
+      selectPlanStrategy(familyStrategies[familyStrategies.length - 1].key);
+    }
+    setStatus(chargerFoundStatus(chargers));
+  } catch (err) {
+    if (myRouteGeneration !== routeSelectionGeneration) return;
+    console.error(err);
+    setStatus(err.message || "Something went wrong updating the plan. Please try again.", true);
+  } finally {
+    if (myRouteGeneration === routeSelectionGeneration) planNoteEl.hidden = true;
   }
 }
 
