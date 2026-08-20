@@ -99,11 +99,12 @@ run entirely in your browser.
      and, for a match, exactly how close ("✅ matched within 350 ft").
      These boxes take a moment longer to appear than the other 3, since
      each has to look candidates up rather than just doing math — but every
-     candidate at a given stop is checked *at once*, not one at a time, so
-     that's normally one short wait (as long as the slowest of up to 6
-     lookups) rather than several back to back (see the limitations below
-     for how the underlying data is also cached/shared to keep this as
-     light as possible). **If you checked a "Prefer stops near" box, no *plan* is
+     candidate at a stop, and all 3 distance tiers, are checked *at once*
+     rather than one at a time, so normally this is one short wait (as long
+     as the single slowest of everything being checked) rather than many
+     stacked back to back (see the limitations below for how the
+     underlying data is also cached/shared, and time-limited so a slow
+     reply can't hang indefinitely). **If you checked a "Prefer stops near" box, no *plan* is
      shown at all until this check finishes** — deliberately, so you're
      never shown "Fewest stops" (which knows nothing about your amenity
      preference) and end up mistaking it for the real recommendation, or
@@ -213,21 +214,30 @@ you're ready — just say the word.
   a shared public resource with light rate limits, similar to Nominatim —
   fine for occasional personal use, but the lookup can occasionally be slow
   or fail, especially with several checks in flight at once (the
-  background preload, a plan, a Family-friendly tier check). Each lookup
-  retries once automatically after a short pause before giving up — if it
-  still fails after that, the popup/plan says so rather than retrying
-  further.
+  background preload, a plan, a Family-friendly tier check, and — since
+  those now all run in parallel rather than one at a time — potentially a
+  fair few requests at once for a single search). Every lookup is capped
+  client-side at 10 seconds (not just Overpass's own internal query
+  timeout, which only bounds its side, not however long the reply takes to
+  arrive) and retries once automatically after a short pause before giving
+  up — if it still fails after that, the popup/plan says so rather than
+  retrying further. In a densely-mapped area, a wide search can occasionally
+  still take the full 10 seconds simply because there's a lot of ground (and
+  data) to cover.
 - **"Family-friendly stops" only checks a handful of candidates per stop**
   (up to 6, furthest-reachable first), not every charger near the route —
   checking all of them would mean dozens of extra Overpass lookups per
   search, which isn't a good trade against the free service's rate limits.
-  Those 6 are all checked at the same time rather than one after another,
-  so this is normally one short wait rather than several back to back — but
-  it still isn't an exhaustive search: if none of those 6 have a match,
-  the plan doesn't keep looking further down the list of reachable
-  chargers. This applies to each of the distance tiers (see above)
-  independently — a wider tier still only checks the same handful of
-  candidates, just with a more forgiving distance.
+  Those 6, and all 3 distance tiers, are now all checked at the same time
+  rather than one after another (previously tiers ran one after another,
+  each only starting once the last had fully finished or failed — now
+  they're fired together, so the worst case is one wait for whichever is
+  slowest instead of the 3 stacked back to back). This is faster but does
+  mean a wider tier's lookups happen even when the strict one turns out to
+  match everywhere and the wider tier's box never actually gets shown. It
+  still isn't an exhaustive search either way: if none of the 6 candidates
+  checked have a match, the plan doesn't keep looking further down the
+  list of reachable chargers.
 - **The 3 "Family-friendly" distance tiers are fixed multiples** (1x, 5x,
   20x your typed "within" distance, capped at 5km total) — not something
   you can currently set yourself. Checking a charger against a wider tier

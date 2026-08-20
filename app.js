@@ -582,7 +582,7 @@ async function selectRoute(index) {
 
       setStatus("Finding the best stop near your preferred amenities...");
       planNoteEl.textContent =
-        "🔍 Finding the best stop near your preferred amenities — this takes a moment longer than the other plans, since it checks candidates one at a time rather than just doing math. Nothing's shown below until it has a real answer.";
+        "🔍 Finding the best stop near your preferred amenities — this takes a moment longer than the other plans, since it has to look candidates up rather than just doing math. Nothing's shown below until it has a real answer.";
       planNoteEl.hidden = false;
 
       // Awaited here, before the general preload below, so these checks —
@@ -1026,19 +1026,38 @@ function familyTierRadiusMeters(baseRadiusMeters, tier) {
 }
 
 async function buildFamilyStrategies(chargers, route, rangeMiles, preferredAmenities) {
+  // Every tier's plan is a fully independent computation — a stricter
+  // tier's result never depends on a looser one, or vice versa — so
+  // there's no reason to wait for tier 1 to fully fail before even
+  // starting tier 2's lookups. All 3 run at once here; the worst case
+  // (every tier needed) becomes one wait for whichever tier turns out
+  // slowest, instead of tier 1's wait, then tier 2's, then tier 3's,
+  // stacked back to back. The trade is a few requests for a tier that
+  // ends up unused (e.g. tier 2/3 when tier 1 already matched everywhere)
+  // — worth it for how much faster the common case feels.
+  const tierOutcomes = await Promise.all(
+    FAMILY_DISTANCE_TIERS.map((tier) => {
+      const tierRadiusMeters = familyTierRadiusMeters(amenityDistanceMetersForSearch, tier);
+      return planFamilyTierStops(chargers, route, rangeMiles, preferredAmenities, tierRadiusMeters).then((result) => ({
+        tier,
+        tierRadiusMeters,
+        result,
+      }));
+    })
+  );
+
+  // Still only surface as many plan boxes as actually add something —
+  // once a tier fully matches, a looser tier after it has nothing left to
+  // improve on, so it's left out even though it was computed above.
   const strategies = [];
-
-  for (const tier of FAMILY_DISTANCE_TIERS) {
-    const tierRadiusMeters = familyTierRadiusMeters(amenityDistanceMetersForSearch, tier);
-    const result = await planFamilyTierStops(chargers, route, rangeMiles, preferredAmenities, tierRadiusMeters);
-
+  for (const { tier, tierRadiusMeters, result } of tierOutcomes) {
     const label = tier.noteWord
       ? `Family-friendly (${tier.noteWord} ${formatWalkingDistance(tierRadiusMeters)})`
       : "Family-friendly stops";
 
     strategies.push({ key: tier.key, label, result });
 
-    if (result.allStopsMatched) break; // nothing left for a looser tier to improve on
+    if (result.allStopsMatched) break;
   }
 
   return strategies;
@@ -1537,6 +1556,16 @@ function escapeRegExp(str) {
   return str.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
 }
 
+// The [timeout:15] inside the Overpass query text only tells Overpass's own
+// query planner when to give up *server-side* — it does nothing to bound
+// how long the browser's fetch() call itself waits for a reply, which
+// could otherwise hang well past that on a slow connection or a stuck
+// response. This is the actual client-side cap: past this, the request is
+// aborted and treated as a failure (letting the one-retry logic in
+// fetchNearbyAmenitiesWithRetry take over), rather than left waiting
+// indefinitely for an answer that may never come quickly enough to matter.
+const OVERPASS_FETCH_TIMEOUT_MS = 10000;
+
 async function fetchNearbyAmenities(lat, lon, radiusMeters, preferredChains = [], preferredShopBrands = []) {
   // When specific chains/brands are picked, these narrow the restaurant/cafe
   // and shop parts of the query to just those names (matched case-
@@ -1548,7 +1577,7 @@ async function fetchNearbyAmenities(lat, lon, radiusMeters, preferredChains = []
   const shopBrandFilter = buildBrandNameFilter(preferredShopBrands);
 
   const query = `
-    [out:json][timeout:15];
+    [out:json][timeout:10];
     (
       node["amenity"~"^(restaurant|cafe|fast_food)$"]${chainFilter}(around:${radiusMeters},${lat},${lon});
       node["leisure"="playground"](around:${radiusMeters},${lat},${lon});
@@ -1568,10 +1597,25 @@ async function fetchNearbyAmenities(lat, lon, radiusMeters, preferredChains = []
   );
   console.log("[amenities] Overpass query sent:", query);
 
-  const response = await fetch("https://overpass-api.de/api/interpreter", {
-    method: "POST",
-    body: query,
-  });
+  const abortController = new AbortController();
+  const timeoutId = setTimeout(() => abortController.abort(), OVERPASS_FETCH_TIMEOUT_MS);
+
+  let response;
+  try {
+    response = await fetch("https://overpass-api.de/api/interpreter", {
+      method: "POST",
+      body: query,
+      signal: abortController.signal,
+    });
+  } catch (err) {
+    if (err.name === "AbortError") {
+      throw new Error(`Overpass didn't respond within ${OVERPASS_FETCH_TIMEOUT_MS / 1000}s`);
+    }
+    throw err;
+  } finally {
+    clearTimeout(timeoutId);
+  }
+
   if (!response.ok) {
     console.error(`[amenities] Overpass request failed: HTTP ${response.status}`);
     throw new Error(`Overpass returned an error (HTTP ${response.status})`);
