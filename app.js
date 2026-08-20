@@ -115,6 +115,11 @@ let preferredChainsForSearch = []; // specific chain names checked, e.g. ["McDon
 let preferredShopBrandsForSearch = []; // specific shop names checked (both tiers combined) — narrows "shop"
 let planStrategies = [];
 let selectedPlanKey = null;
+// True once you've actually clicked a plan box yourself for the current
+// route. Used to decide whether it's OK to auto-switch the selected plan
+// to a family-friendly option once one becomes available (see
+// selectRoute()) — never yanking away a plan you already chose yourself.
+let userPickedPlanManually = false;
 
 // Which unit distances are typed in and displayed in. All the actual
 // planning math elsewhere in this file works in miles regardless — this
@@ -146,6 +151,7 @@ const routePickerEl = document.getElementById("route-picker");
 const routeOptionsEl = document.getElementById("route-options");
 const planPickerEl = document.getElementById("plan-picker");
 const planOptionsEl = document.getElementById("plan-options");
+const planNoteEl = document.getElementById("plan-note");
 const planEl = document.getElementById("plan");
 const planContentEl = document.getElementById("plan-content");
 const legendEl = document.getElementById("legend");
@@ -516,7 +522,9 @@ async function selectRoute(index) {
   planPickerEl.hidden = true;
   planEl.hidden = true;
   legendEl.hidden = true;
+  planNoteEl.hidden = true;
   selectedPlanKey = null;
+  userPickedPlanManually = false; // a fresh route means no plan choice has been made for it yet
 
   setLoading(true);
 
@@ -567,23 +575,43 @@ async function selectRoute(index) {
     // amenity preference was checked. They're built after the other 3 since
     // each has to check candidates against Open Street Map data one at a
     // time, which takes a moment longer than the instant math the rest use.
+    // While that's happening, the plan panel is still showing "Fewest
+    // stops" — a plan that knows nothing about your amenity preference —
+    // so this note makes clear that isn't the final word yet.
     if (hasRangeForSearch && preferredAmenitiesForSearch.length > 0 && chargers.length > 0) {
       setStatus("Checking nearby amenities for family-friendly options...");
+      planNoteEl.textContent =
+        "🔍 Still checking family-friendly options — this plan may switch automatically once that's done.";
+      planNoteEl.hidden = false;
       const familyStrategies = await buildFamilyStrategies(
         chargers,
         route,
         rangeMilesForSearch,
         preferredAmenitiesForSearch
       );
+      planNoteEl.hidden = true;
       planStrategies.push(...familyStrategies);
       renderPlanOptions(planStrategies);
-      markSelectedCard(planOptionsEl, (child) => child.dataset.planKey === selectedPlanKey);
+
+      // You checked "prefer stops near X" — so the moment a family-friendly
+      // option is ready, it should become what's actually shown, not just
+      // one more box you'd have to notice and click yourself. Only does
+      // this if you haven't already picked a plan yourself in the meantime;
+      // your own choice always wins. familyStrategies is ordered strictest
+      // to loosest and stops as soon as one fully matches, so the last one
+      // built is always the best result actually found.
+      if (!userPickedPlanManually && familyStrategies.length > 0) {
+        selectPlanStrategy(familyStrategies[familyStrategies.length - 1].key);
+      } else {
+        markSelectedCard(planOptionsEl, (child) => child.dataset.planKey === selectedPlanKey);
+      }
       setStatus(chargerFoundStatus(chargers));
     }
   } catch (err) {
     console.error(err);
     setStatus(err.message || "Something went wrong finding chargers. Please try again.", true);
   } finally {
+    planNoteEl.hidden = true; // safety net — never leave the "still checking" note stuck up on an error
     setLoading(false);
   }
 }
@@ -1096,7 +1124,10 @@ function renderPlanOptions(strategies) {
       <div class="option-title">${escapeHtml(strategy.label)}</div>
       <div class="option-detail">${escapeHtml(detail)}</div>
     `;
-    btn.addEventListener("click", () => selectPlanStrategy(strategy.key));
+    btn.addEventListener("click", () => {
+      userPickedPlanManually = true; // stops any later auto-switch to a family-friendly plan
+      selectPlanStrategy(strategy.key);
+    });
     planOptionsEl.appendChild(btn);
   });
 
@@ -1550,6 +1581,22 @@ async function fetchNearbyAmenities(lat, lon, radiusMeters, preferredChains = []
   return result;
 }
 
+// Overpass is a shared free service — it occasionally times out or errors
+// under load rather than being genuinely unreachable, especially with
+// several amenity checks running around the same moment (preload, a plan,
+// a Family-friendly tier check). One retry after a short pause smooths
+// over that common case instead of immediately giving up and showing
+// "Couldn't check what's nearby" for what's really just a momentary hiccup.
+async function fetchNearbyAmenitiesWithRetry(lat, lon, radiusMeters, preferredChains, preferredShopBrands) {
+  try {
+    return await fetchNearbyAmenities(lat, lon, radiusMeters, preferredChains, preferredShopBrands);
+  } catch (err) {
+    console.warn("[amenities] first attempt failed, retrying once:", err.message || err);
+    await new Promise((resolve) => setTimeout(resolve, 1500));
+    return fetchNearbyAmenities(lat, lon, radiusMeters, preferredChains, preferredShopBrands);
+  }
+}
+
 // The single place every part of the app asks for a charger's "what's
 // nearby" info, for a specific radius. Caches the *promise*, not just the
 // eventual result, keyed by that exact radius (rounded, to avoid two
@@ -1566,7 +1613,7 @@ async function getAmenityInfo(charger, radiusMeters) {
   const key = Math.round(radiusMeters);
   charger._amenityInfoByRadius = charger._amenityInfoByRadius || {};
   if (!charger._amenityInfoByRadius[key]) {
-    charger._amenityInfoByRadius[key] = fetchNearbyAmenities(
+    charger._amenityInfoByRadius[key] = fetchNearbyAmenitiesWithRetry(
       charger.AddressInfo.Latitude,
       charger.AddressInfo.Longitude,
       radiusMeters,

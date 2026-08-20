@@ -214,6 +214,21 @@ header h1 {
   font-weight: 600;
 }
 
+/* Shown briefly between the plan-picker boxes and the plan detail panel
+   while a family-friendly plan is still being checked — see selectRoute()
+   in app.js. */
+.plan-note {
+  max-width: 900px;
+  margin: 0 auto 0.75rem;
+  padding: 0.5rem 0.9rem;
+  background: #fff8e1;
+  border: 1px solid #ffe082;
+  border-radius: 8px;
+  font-size: 0.85rem;
+  color: #6d4c00;
+  text-align: center;
+}
+
 /* The route-picker and plan-picker boxes ("choose a route" / "choose a
    charging plan"), plus the individual clickable cards inside them. */
 .picker {

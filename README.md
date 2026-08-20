@@ -98,10 +98,16 @@ run entirely in your browser.
      than leaving a gap — the written plan tells you which stops matched
      and, for a match, exactly how close ("✅ matched within 350 ft").
      These boxes take a moment longer to appear than the other 3, since
-     each has to look candidates up rather than just doing math — but
-     looking up a second, wider distance for the same charger never means
-     a second network request; it re-checks data already fetched (see the
-     limitations below).
+     each has to look candidates up rather than just doing math (see the
+     limitations below for how that's cached/shared to keep it as light as
+     possible). **If you checked a "Prefer stops near" box, the plan panel
+     automatically switches to the best family-friendly option the moment
+     it's ready** — you don't have to notice and click it yourself. Until
+     then, a small notice appears above the plan explaining it may still
+     change. If you click a different plan box yourself before that
+     happens, your choice is respected and the auto-switch is cancelled —
+     it only ever fills in a choice you haven't made yet, never overrides
+     one you have.
 
    Pick a plan box to see that plan's stops as big numbered pins on the map,
    plus a written stop-by-stop plan above it. Each stop shows a compact row
@@ -194,10 +200,14 @@ you're ready — just say the word.
   recommendation.** It doesn't know quality, opening hours, or whether a
   place has actually closed down since it was last mapped — and some
   places on OSM don't have a name recorded, shown as "Unnamed restaurant"
-  etc. rather than skipped. Overpass (the free service behind this) is also a shared
-  public resource with light rate limits, similar to Nominatim — fine for
-  occasional personal use, but the lookup can occasionally be slow or fail;
-  if it does, the popup just says so rather than retrying automatically.
+  etc. rather than skipped. Overpass (the free service behind this) is also
+  a shared public resource with light rate limits, similar to Nominatim —
+  fine for occasional personal use, but the lookup can occasionally be slow
+  or fail, especially with several checks in flight at once (the
+  background preload, a plan, a Family-friendly tier check). Each lookup
+  retries once automatically after a short pause before giving up — if it
+  still fails after that, the popup/plan says so rather than retrying
+  further.
 - **"Family-friendly stops" only checks a handful of candidates per stop**
   (up to 6, furthest-reachable first), not every charger near the route —
   checking all of them would mean dozens of extra Overpass lookups per

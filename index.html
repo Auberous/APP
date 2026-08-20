@@ -10,7 +10,7 @@
     rel="stylesheet"
     href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css"
   />
-  <link rel="stylesheet" href="style.css?v=8" />
+  <link rel="stylesheet" href="style.css?v=9" />
 </head>
 <body>
   <header>
@@ -107,6 +107,12 @@
     <div id="plan-options" class="option-grid"></div>
   </div>
 
+  <!-- Shown briefly while a family-friendly plan is still being checked, so
+       the plan below (still showing "Fewest stops" at that moment) isn't
+       mistaken for the amenity-aware recommendation — see selectRoute() in
+       app.js, which also auto-switches to the family plan once it's ready. -->
+  <p id="plan-note" class="plan-note" hidden></p>
+
   <!-- The written stop-by-stop detail for whichever plan box is selected. -->
   <div id="plan" class="plan" hidden>
     <h2>⚡ Charging plan</h2>
@@ -131,6 +137,6 @@
   <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
   <!-- The brand lists behind the "specific chains"/"specific shops" pickers, by country. -->
   <script src="brandLists.js?v=4"></script>
-  <script src="app.js?v=18"></script>
+  <script src="app.js?v=19"></script>
 </body>
 </html>
