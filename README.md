@@ -150,13 +150,18 @@ run entirely in your browser.
    they're combined into one filter. Which brands are listed depends on
    your detected country (see step 0 above for how that's guessed and
    refined — see `brandLists.js` for the lists, one entry per country with
-   a `restaurants` array and a `shops` object). Picking brands actually
-   narrows the live Overpass query itself (matched by name), not just a
-   label — it affects both the popup's "what's nearby" list and the
-   "Family-friendly stops" plan matching. Each brand row also shows that
-   brand's real logo (fetched live by domain — see the limitations below),
-   not just a generic icon, so chains in the same category are easy to
-   tell apart at a glance.
+   a `restaurants` array and a `shops` object). Picking brands genuinely
+   changes what counts as a match for "Family-friendly stops" — but the
+   "what's nearby" list itself (popups and plan stops both) still shows
+   *everything* nearby in that category, not just your picks: whichever
+   ones actually match your picks are bolded with a ⭐, and if none of
+   what's nearby matches, a small note says so ("None of these match your
+   pick — closest is 850 ft away") instead of the list just going blank.
+   That way you can always see for yourself what's really around a
+   charger, not just trust a bare "no match" verdict. Each brand row in
+   the picker also shows that brand's real logo (fetched live by domain —
+   see the limitations below), not just a generic icon, so chains in the
+   same category are easy to tell apart at a glance.
 7. **The Start location/Destination example text is country-specific too**
    (e.g. "Sydney"/"Melbourne" for AU, "Austin"/"Dallas" for US) — same
    `brandLists.js` entries, same detected country, just placeholder text
@@ -259,10 +264,18 @@ you're ready — just say the word.
   that same distance — a map pin, a plan stop, and the background preload
   all reuse one fetch rather than tripling it.
 - **Chain/brand matching is a name search, not a verified database** — it
-  matches whatever OpenStreetMap has in a place's "name" tag, so a
-  misspelled or unusually-formatted listing could be missed, and it doesn't
+  checks whether OpenStreetMap's "name" tag for a place *contains* one of
+  your picked brand names (case-insensitive, so "mcdonald's family
+  restaurant" still matches "McDonald's"), so a genuinely misspelled or
+  very differently-formatted listing could still be missed, and it doesn't
   know about brands not yet in `brandLists.js` for your country (those fall
-  back to a short internationally-common list, which may not fit).
+  back to a short internationally-common list, which may not fit). This
+  matching now happens after the Overpass fetch, not as part of the query
+  itself — every restaurant/cafe and every shop in range is fetched either
+  way, so the "what's nearby" list can show what's actually around a
+  charger even when nothing matches your specific pick, and the Overpass
+  query is very slightly larger per request as a result (fetching a whole
+  category instead of a name-filtered slice of it).
 - **Country detection is a best guess, refined over a few seconds, not a
   setting you control directly.** It starts from your browser's locale
   (instant but sometimes wrong — see step 0 above), then a free IP-lookup

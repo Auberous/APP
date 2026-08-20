@@ -537,3 +537,22 @@ header h1 {
   color: #888;
   font-style: italic;
 }
+
+/* Marks a nearby item that matches a specific chain/brand you picked (see
+   renderAmenitiesHtml in app.js) — bold, so it's easy to spot among
+   whatever else turned up nearby. */
+.amenity-match {
+  font-weight: 700;
+  color: #2e7d32;
+}
+
+/* Shown under a category when nothing nearby matches a chain/brand you
+   picked, even though something else in that category exists — makes
+   clear the search actually ran and found real places, just not the one
+   you asked for, rather than leaving a bare unexplained "no match". */
+.amenities-no-match {
+  margin-top: 0.15rem;
+  font-size: 0.72rem;
+  font-style: italic;
+  color: #999;
+}

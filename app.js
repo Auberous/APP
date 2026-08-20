@@ -1267,7 +1267,10 @@ async function planFamilyTierStops(chargers, route, rangeMiles, preferredAmeniti
 async function candidateMatchesAmenitiesAtRadius(charger, preferredAmenities, radiusMeters) {
   try {
     const info = await getAmenityInfo(charger, radiusMeters);
-    return preferredAmenities.every((key) => info[key].count > 0);
+    // matchCount (not count) — count includes every nearby result of that
+    // type regardless of brand, so a KFC alone would otherwise look like
+    // a "match" for a search narrowed to McDonald's.
+    return preferredAmenities.every((key) => info[key].matchCount > 0);
   } catch (err) {
     console.error("Amenity check failed for a candidate charger:", err);
     return false;
@@ -1669,21 +1672,16 @@ async function loadNearbyAmenities(marker, charger) {
   }
 }
 
-// Builds an Overpass tag filter like ["name"~"McDonald's|KFC",i], or an
-// empty string if no brand names are given (meaning: match the whole
-// category, not narrowed to specific brands). Shared by the restaurant
-// chain filter and the shop brand filter below.
-function buildBrandNameFilter(preferredBrands) {
-  if (!preferredBrands || preferredBrands.length === 0) return "";
-  const pattern = preferredBrands.map(escapeRegExp).join("|");
-  return `["name"~"${pattern}",i]`;
-}
-
-// Escapes a brand name for safe use inside the Overpass regex above —
-// names can contain characters (like the apostrophe in "McDonald's") that
-// are harmless in a name but would otherwise be treated as regex syntax.
-function escapeRegExp(str) {
-  return str.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+// True if `name` looks like one of the given brand names — a plain
+// case-insensitive "contains" check, not an exact match, so "McDonald's
+// Family Restaurant" (an OSM name variant that does happen) still counts
+// as "McDonald's". Used to work out, client-side, which of the nearby
+// results (see fetchNearbyAmenities — it deliberately no longer narrows
+// the Overpass query itself by name) actually match your specific picks.
+function nameMatchesAnyBrand(name, brandNames) {
+  if (!name || !brandNames || brandNames.length === 0) return false;
+  const lowerName = name.toLowerCase();
+  return brandNames.some((brand) => lowerName.includes(brand.toLowerCase()));
 }
 
 // The [timeout:15] inside the Overpass query text only tells Overpass's own
@@ -1697,22 +1695,25 @@ function escapeRegExp(str) {
 const OVERPASS_FETCH_TIMEOUT_MS = 10000;
 
 async function fetchNearbyAmenities(lat, lon, radiusMeters, preferredChains = [], preferredShopBrands = []) {
-  // When specific chains/brands are picked, these narrow the restaurant/cafe
-  // and shop parts of the query to just those names (matched case-
-  // insensitively against OpenStreetMap's "name" tag) instead of any
-  // restaurant/cafe or any shop. It's real filtering done by Overpass
-  // itself, not something applied after the fact — so if none of your
-  // picks are nearby, none show up at all.
-  const chainFilter = buildBrandNameFilter(preferredChains);
-  const shopBrandFilter = buildBrandNameFilter(preferredShopBrands);
-
+  // Deliberately *not* narrowed by name here — every restaurant/cafe and
+  // every shop in range comes back, regardless of which chains you
+  // picked. Matching against your specific picks happens after the fetch
+  // (see nameMatchesAnyBrand / the matchCount below) instead of inside
+  // the Overpass query itself. This means the "what's nearby" list can
+  // show what's actually around a charger — a Subway, a KFC, whatever's
+  // really there — even when you've narrowed your search to McDonald's,
+  // instead of going blank with nothing to check the search against. It
+  // used to filter server-side, which was slightly more efficient but
+  // meant "0 results" for a specific chain looked identical to "0
+  // restaurants of any kind" — there was no way to tell the difference,
+  // or to see what actually is nearby instead.
   const query = `
     [out:json][timeout:10];
     (
-      node["amenity"~"^(restaurant|cafe|fast_food)$"]${chainFilter}(around:${radiusMeters},${lat},${lon});
+      node["amenity"~"^(restaurant|cafe|fast_food)$"](around:${radiusMeters},${lat},${lon});
       node["leisure"="playground"](around:${radiusMeters},${lat},${lon});
       node["amenity"="toilets"](around:${radiusMeters},${lat},${lon});
-      node["shop"~"^(supermarket|convenience|department_store|variety_store)$"]${shopBrandFilter}(around:${radiusMeters},${lat},${lon});
+      node["shop"~"^(supermarket|convenience|department_store|variety_store)$"](around:${radiusMeters},${lat},${lon});
     );
     out body;
   `;
@@ -1722,8 +1723,8 @@ async function fetchNearbyAmenities(lat, lon, radiusMeters, preferredChains = []
   // filter was actually applied.
   console.log(
     `[amenities] searching near (${lat.toFixed(5)}, ${lon.toFixed(5)}), radius ${radiusMeters}m — ` +
-      `restaurant chains: ${preferredChains.length ? preferredChains.join(", ") : "(none picked — any restaurant/cafe)"}, ` +
-      `shop brands: ${preferredShopBrands.length ? preferredShopBrands.join(", ") : "(none picked — any shop)"}`
+      `restaurant chains to match: ${preferredChains.length ? preferredChains.join(", ") : "(none picked — any restaurant/cafe counts)"}, ` +
+      `shop brands to match: ${preferredShopBrands.length ? preferredShopBrands.join(", ") : "(none picked — any shop counts)"}`
   );
   console.log("[amenities] Overpass query sent:", query);
 
@@ -1773,15 +1774,33 @@ async function fetchNearbyAmenities(lat, lon, radiusMeters, preferredChains = []
     });
   });
 
+  // Which preferred-brand list applies to which category — only
+  // "restaurant" and "shop" have a brand concept at all; playgrounds and
+  // restrooms always just "match" if that category is checked.
+  const brandsByKey = { restaurant: preferredChains, shop: preferredShopBrands };
+
   const result = {};
   Object.keys(found).forEach((key) => {
     const sorted = found[key].sort((a, b) => a.distanceMeters - b.distanceMeters);
-    result[key] = { count: sorted.length, items: sorted.slice(0, AMENITY_LIST_LIMIT) };
+    const brands = brandsByKey[key] || [];
+
+    result[key] = {
+      count: sorted.length, // every nearby result in this category, any brand
+      // How many of *all* of them (not just the few actually listed below)
+      // match one of your specific picks — this, not count, is what
+      // "Family-friendly stops" actually checks. If you didn't narrow to
+      // specific brands, every result counts as a match.
+      matchCount: brands.length > 0 ? sorted.filter((item) => nameMatchesAnyBrand(item.name, brands)).length : sorted.length,
+      items: sorted.slice(0, AMENITY_LIST_LIMIT).map((item) => ({
+        ...item,
+        matchesPreferred: brands.length === 0 || nameMatchesAnyBrand(item.name, brands),
+      })),
+    };
   });
 
   console.log(
     `[amenities] results near (${lat.toFixed(5)}, ${lon.toFixed(5)}):`,
-    Object.fromEntries(Object.entries(result).map(([key, v]) => [key, v.count]))
+    Object.fromEntries(Object.entries(result).map(([key, v]) => [key, `${v.matchCount} matching / ${v.count} total`]))
   );
 
   return result;
@@ -1852,21 +1871,36 @@ function renderAmenitiesHtml(info) {
 
   return groups
     .map((a) => {
-      const { count, items } = info[a.key];
+      const { count, matchCount, items } = info[a.key];
       const itemLines = items
-        .map(
-          (item) =>
-            `<li>${escapeHtml(item.name || `Unnamed ${a.label.toLowerCase()}`)} — ${formatWalkingDistance(
-              item.distanceMeters
-            )}</li>`
-        )
+        .map((item) => {
+          const name = escapeHtml(item.name || `Unnamed ${a.label.toLowerCase()}`);
+          const distance = formatWalkingDistance(item.distanceMeters);
+          // Marks which of these actually match a specific chain/brand you
+          // picked (if you picked any) — so you can see for yourself, e.g.,
+          // "Subway — 120 ft" plainly and "⭐ McDonald's — 850 ft" marked,
+          // rather than just trusting a bare match/no-match verdict.
+          return item.matchesPreferred
+            ? `<li class="amenity-match">⭐ ${name} — ${distance}</li>`
+            : `<li>${name} — ${distance}</li>`;
+        })
         .join("");
       const more = count > items.length ? `<li class="amenities-more">+${count - items.length} more</li>` : "";
+      // Only worth calling out for restaurant/shop, the 2 categories that
+      // can be narrowed to specific brands — and only when you did narrow
+      // it, and none of what's actually nearby matches your pick.
+      const noMatchNote =
+        matchCount === 0 && count > 0
+          ? `<div class="amenities-no-match">None of these match your pick — closest is ${formatWalkingDistance(
+              items[0].distanceMeters
+            )} away.</div>`
+          : "";
 
       return `
         <div class="amenities-group">
           <div class="amenities-group-title">${a.icon} ${escapeHtml(count === 1 ? a.label : a.plural)}</div>
           <ul>${itemLines}${more}</ul>
+          ${noMatchNote}
         </div>
       `;
     })
