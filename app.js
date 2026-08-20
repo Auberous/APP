@@ -1066,14 +1066,29 @@ async function planFamilyTierStops(chargers, route, rangeMiles, preferredAmeniti
       break;
     }
 
+    // Check every candidate at once rather than one at a time — this used
+    // to try candidates in sequence and stop at the first match, meaning
+    // up to MAX_AMENITY_CHECKS_PER_STOP Overpass round trips back to back
+    // in the worst case (candidate 1 doesn't match, wait for it to fail,
+    // then try candidate 2, and so on). Firing them all together turns
+    // that into one wait for the slowest of up to that many *parallel*
+    // requests instead — the biggest single reason this check used to
+    // take a while. Same result either way: the furthest-reachable
+    // candidate that matches still wins, since toCheck stays sorted
+    // furthest-first and findIndex takes the first match in that order.
+    const toCheck = inReach.slice(0, MAX_AMENITY_CHECKS_PER_STOP);
+    const matchResults = await Promise.all(
+      toCheck.map((candidate) =>
+        candidateMatchesAmenitiesAtRadius(candidate.charger, preferredAmenities, tierRadiusMeters)
+      )
+    );
+    const matchedIndex = matchResults.findIndex(Boolean);
+
     let chosen = null;
-    for (const candidate of inReach.slice(0, MAX_AMENITY_CHECKS_PER_STOP)) {
-      if (await candidateMatchesAmenitiesAtRadius(candidate.charger, preferredAmenities, tierRadiusMeters)) {
-        chosen = candidate;
-        chosen.amenityMatch = true;
-        chosen.amenityMatchRadiusMeters = tierRadiusMeters;
-        break;
-      }
+    if (matchedIndex !== -1) {
+      chosen = toCheck[matchedIndex];
+      chosen.amenityMatch = true;
+      chosen.amenityMatchRadiusMeters = tierRadiusMeters;
     }
 
     if (!chosen) {

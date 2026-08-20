@@ -98,9 +98,12 @@ run entirely in your browser.
      than leaving a gap — the written plan tells you which stops matched
      and, for a match, exactly how close ("✅ matched within 350 ft").
      These boxes take a moment longer to appear than the other 3, since
-     each has to look candidates up rather than just doing math (see the
-     limitations below for how that's cached/shared to keep it as light as
-     possible). **If you checked a "Prefer stops near" box, no *plan* is
+     each has to look candidates up rather than just doing math — but every
+     candidate at a given stop is checked *at once*, not one at a time, so
+     that's normally one short wait (as long as the slowest of up to 6
+     lookups) rather than several back to back (see the limitations below
+     for how the underlying data is also cached/shared to keep this as
+     light as possible). **If you checked a "Prefer stops near" box, no *plan* is
      shown at all until this check finishes** — deliberately, so you're
      never shown "Fewest stops" (which knows nothing about your amenity
      preference) and end up mistaking it for the real recommendation, or
@@ -218,12 +221,13 @@ you're ready — just say the word.
   (up to 6, furthest-reachable first), not every charger near the route —
   checking all of them would mean dozens of extra Overpass lookups per
   search, which isn't a good trade against the free service's rate limits.
-  In practice this means it usually finds a match quickly if one exists
-  nearby, but it isn't an exhaustive search. This applies to each of the
-  distance tiers (see above) independently — a wider tier still only
-  checks the same handful of candidates, just with a more forgiving
-  distance, so it's not guaranteed to find a match either even if one
-  technically exists further down the list of reachable chargers.
+  Those 6 are all checked at the same time rather than one after another,
+  so this is normally one short wait rather than several back to back — but
+  it still isn't an exhaustive search: if none of those 6 have a match,
+  the plan doesn't keep looking further down the list of reachable
+  chargers. This applies to each of the distance tiers (see above)
+  independently — a wider tier still only checks the same handful of
+  candidates, just with a more forgiving distance.
 - **The 3 "Family-friendly" distance tiers are fixed multiples** (1x, 5x,
   20x your typed "within" distance, capped at 5km total) — not something
   you can currently set yourself. Checking a charger against a wider tier
