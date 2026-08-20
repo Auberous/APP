@@ -79,10 +79,22 @@ run entirely in your browser.
      appears if you checked any "Prefer stops near" boxes in the form (food,
      playground, restroom, shop) and set how far counts as "near" (100m by
      default — the same distance field also controls the popup's "what's
-     nearby" section). Same idea as "Fewest stops", but at each step it
-     checks a handful of the reachable chargers (furthest first) against
+     nearby" section). Unlike the other 3 strategies, this one doesn't push
+     all the way to the edge of your range before considering a stop —
+     candidates are drawn from roughly **40%-80% of your remaining range**
+     first (a real town, if there is one along that stretch, tends to sit
+     somewhere in there — which is also exactly why it's likely to actually
+     have decent food/shop options, not just be wherever the battery
+     happened to run low). If nothing at all falls in that window, it
+     quietly widens back out to the full reachable range rather than
+     wrongly saying the trip isn't possible. At each step it checks a
+     handful of the candidates in that window (furthest first) against
      Overpass and picks the first one that has *all* your checked amenities
-     nearby.
+     nearby. Because it isn't stretching for the furthest possible stop
+     the way "Fewest stops" does, this plan can end up needing one more
+     stop than the others on a longer trip — a deliberate trade for a
+     stop that's actually a sensible place to take a break, not just the
+     one that burns the least range.
      - **"Family-friendly stops"** uses your exact typed distance (100m by
        default). If a match exists that close everywhere on the route,
        this is the only one of these boxes you'll see.
@@ -242,19 +254,28 @@ you're ready — just say the word.
   still take the full 10 seconds simply because there's a lot of ground (and
   data) to cover.
 - **"Family-friendly stops" only checks a handful of candidates per stop**
-  (up to 6, furthest-reachable first), not every charger near the route —
-  checking all of them would mean dozens of extra Overpass lookups per
-  search, which isn't a good trade against the free service's rate limits.
-  Those 6, and all 3 distance tiers, are now all checked at the same time
-  rather than one after another (previously tiers ran one after another,
-  each only starting once the last had fully finished or failed — now
-  they're fired together, so the worst case is one wait for whichever is
-  slowest instead of the 3 stacked back to back). This is faster but does
-  mean a wider tier's lookups happen even when the strict one turns out to
-  match everywhere and the wider tier's box never actually gets shown. It
-  still isn't an exhaustive search either way: if none of the 6 candidates
+  (up to 6), not every charger near the route — checking all of them would
+  mean dozens of extra Overpass lookups per search, which isn't a good
+  trade against the free service's rate limits. Those 6, and all 3
+  distance tiers, are now all checked at the same time rather than one
+  after another (previously tiers ran one after another, each only
+  starting once the last had fully finished or failed — now they're fired
+  together, so the worst case is one wait for whichever is slowest instead
+  of the 3 stacked back to back). This is faster but does mean a wider
+  tier's lookups happen even when the strict one turns out to match
+  everywhere and the wider tier's box never actually gets shown. It still
+  isn't an exhaustive search either way: if none of the 6 candidates
   checked have a match, the plan doesn't keep looking further down the
   list of reachable chargers.
+- **Candidates come from the 40%-80%-of-range "sensible rest stop" window
+  first** (see step 5 above), which is a genuine trade — it means the
+  handful of candidates actually checked against Overpass are the ones
+  most likely to be a real, town-adjacent break, but it also means a
+  charger sitting right at, say, 90% of your range is never even
+  considered for this plan, however good it might actually be. If that
+  window is completely empty (no chargers at all in that stretch), the
+  search widens back out to the full reachable range automatically — so
+  the trip is never declared impossible over this preference alone.
 - **The 3 "Family-friendly" distance tiers are fixed multiples** (1x, 5x,
   20x your typed "within" distance, capped at 5km total) — not something
   you can currently set yourself. Checking a charger against a wider tier

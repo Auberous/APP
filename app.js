@@ -1125,9 +1125,9 @@ function buildPlanStrategies(chargers, route, rangeMiles) {
 // The 4th, optional plan family: prefer stops near the amenities you
 // checked (restaurant/playground/restroom/shop, narrowed to specific
 // chains/brands if you picked any). Same "fewest stops" logic as the other
-// 3 strategies, but at each step it checks a bounded number of the
-// reachable candidates (furthest first) against Open Street Map's amenity
-// data and picks the first one that has all your chosen amenities nearby.
+// 3 strategies, but at each step it checks a bounded number of candidates
+// against Open Street Map's amenity data and picks the first one that has
+// all your chosen amenities nearby.
 //
 // Rather than one plan, this now offers up to 3, from strictest to most
 // forgiving:
@@ -1141,6 +1141,20 @@ function buildPlanStrategies(chargers, route, rangeMiles) {
 // If a tier already matches every stop, the looser tiers after it are
 // skipped — there'd be nothing for them to improve on.
 const MAX_AMENITY_CHECKS_PER_STOP = 6;
+
+// Rather than checking every charger you could possibly still reach (which
+// pulls in ones sitting right at the very edge of your range — not really
+// where anyone plans a comfortable break), candidates are drawn from a
+// "sensible rest stop" window: roughly 40%-80% of the way through your
+// remaining range. That's also usually where a real town sits along a
+// long stretch of highway, which is exactly why it tends to have decent
+// food/shop options too — a real break, not just "wherever the battery
+// happened to run low". If nothing at all falls in that window (a sparse
+// stretch of road with hardly any chargers), the search quietly widens
+// back out to the full reachable range rather than wrongly declaring the
+// trip impossible over what's really just a preference, not a hard limit.
+const FAMILY_STOP_WINDOW_MIN_FRACTION = 0.4;
+const FAMILY_STOP_WINDOW_MAX_FRACTION = 0.8;
 
 const FAMILY_DISTANCE_TIERS = [
   { key: "family", multiplier: 1, noteWord: null },
@@ -1205,9 +1219,20 @@ async function planFamilyTierStops(chargers, route, rangeMiles, preferredAmeniti
   let allStopsMatched = true;
 
   while (position + rangeMiles < totalMiles) {
-    const inReach = candidates
-      .filter((c) => c.milesAlongRoute > position && c.milesAlongRoute <= position + rangeMiles)
-      .sort((a, b) => b.milesAlongRoute - a.milesAlongRoute); // furthest first, like the other strategies
+    // Prefer the "sensible rest stop" window first — see
+    // FAMILY_STOP_WINDOW_MIN_FRACTION/MAX_FRACTION above — falling back to
+    // the full reachable range only if nothing at all sits in that window.
+    const windowMin = position + rangeMiles * FAMILY_STOP_WINDOW_MIN_FRACTION;
+    const windowMax = position + rangeMiles * FAMILY_STOP_WINDOW_MAX_FRACTION;
+    let inReach = candidates
+      .filter((c) => c.milesAlongRoute > windowMin && c.milesAlongRoute <= windowMax)
+      .sort((a, b) => b.milesAlongRoute - a.milesAlongRoute); // furthest first within the window
+
+    if (inReach.length === 0) {
+      inReach = candidates
+        .filter((c) => c.milesAlongRoute > position && c.milesAlongRoute <= position + rangeMiles)
+        .sort((a, b) => b.milesAlongRoute - a.milesAlongRoute);
+    }
 
     if (inReach.length === 0) {
       reachable = false;
