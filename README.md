@@ -100,14 +100,17 @@ run entirely in your browser.
      These boxes take a moment longer to appear than the other 3, since
      each has to look candidates up rather than just doing math (see the
      limitations below for how that's cached/shared to keep it as light as
-     possible). **If you checked a "Prefer stops near" box, the plan panel
-     automatically switches to the best family-friendly option the moment
-     it's ready** — you don't have to notice and click it yourself. Until
-     then, a small notice appears above the plan explaining it may still
-     change. If you click a different plan box yourself before that
-     happens, your choice is respected and the auto-switch is cancelled —
-     it only ever fills in a choice you haven't made yet, never overrides
-     one you have.
+     possible). **If you checked a "Prefer stops near" box, no plan is
+     shown at all until this check finishes** — deliberately, so you're
+     never shown "Fewest stops" (which knows nothing about your amenity
+     preference) and end up mistaking it for the real recommendation, or
+     picking a stop you wouldn't have actually chosen. A small notice
+     ("🔍 Finding the best stop near your preferred amenities...") appears
+     in the plan's place while that's in progress; once it's done, the
+     plan panel fills in directly with the best result found — you don't
+     have to notice and click a box yourself. If you didn't check any
+     "Prefer stops near" box, none of this applies — the plan appears
+     immediately as soon as it's picked, same as always.
 
    Pick a plan box to see that plan's stops as big numbered pins on the map,
    plus a written stop-by-stop plan above it. Each stop shows a compact row
@@ -269,13 +272,14 @@ you're ready — just say the word.
 - **"What's nearby" is preloaded in the background** for every charger the
   moment a route is picked, 3 chargers at a time, rather than waiting until
   you open a pin or select a plan — so it's usually instant when you get
-  there. The default plan's own stops are requested first (before this
-  general preload even starts), so the handful of stops you're actually
-  looking at right away get first claim on the browser's connection pool
-  rather than queuing behind chargers you haven't looked at yet — but on a
-  slow connection, or right after a big route with lots of chargers, you
-  may still briefly see "Checking what's nearby..." for a stop before its
-  own request finishes. This also means a route with a lot of chargers now
+  there. Whichever amenity checks actually decide what you're shown first
+  — the plan you land on if you didn't check a "Prefer stops near" box, or
+  the family-friendly candidate checks if you did — are requested before
+  this general preload starts, so they get first claim on the browser's
+  connection pool rather than queuing behind chargers that turn out not to
+  matter. On a slow connection, or right after a big route with lots of
+  chargers, a map pin you click directly may still briefly show "Checking
+  what's nearby..." before its own request finishes. This also means a route with a lot of chargers now
   sends a burst of extra Overpass requests up front even for chargers you
   never end up looking at, which is a fair trade for occasional personal
   use but worth knowing about since Overpass is a shared free service (see

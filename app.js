@@ -108,6 +108,12 @@ let currentPlanStopIds = new Set();
 // that specific route.
 let currentRoutes = [];
 let selectedRouteIndex = -1;
+// Counts up every time selectRoute() is called. Its async work (chargers,
+// then the family-friendly check) checks this before touching shared UI
+// state, so if you click a different route option while an earlier one is
+// still working, the earlier (now stale) run quietly stops updating things
+// instead of clobbering the route you actually picked.
+let routeSelectionGeneration = 0;
 let hasRangeForSearch = false;
 let rangeMilesForSearch = 0;
 let preferredAmenitiesForSearch = []; // amenity keys checked in the form, e.g. ["restaurant","playground"]
@@ -507,6 +513,8 @@ form.addEventListener("submit", async (event) => {
 // finds chargers near it, and (if you gave a range) works out charging-plan
 // options for it.
 async function selectRoute(index) {
+  const myRouteGeneration = ++routeSelectionGeneration;
+
   selectedRouteIndex = index;
   markSelectedCard(routeOptionsEl, (_, i) => i === index);
 
@@ -532,35 +540,27 @@ async function selectRoute(index) {
     // Step 4: find chargers near the route
     setStatus("Finding EV chargers near this route...");
     const chargers = await getChargersNearRoute(route);
+    if (myRouteGeneration !== routeSelectionGeneration) return; // a different route was picked meanwhile
     lastChargers = chargers;
 
-    // Step 4b: if a range was given, work out a few different charging-plan
-    // strategies and let the plan-picker boxes handle drawing pins for
-    // whichever one is selected (starting with the first, "Fewest stops").
-    // This also kicks off that plan's own "what's nearby" lookups (see
-    // renderPlan/loadStopAmenitiesForPlan) — done here, before the general
-    // preload below, so the handful of stops you're actually looking at
-    // get first claim on the browser's connection pool, instead of queuing
-    // behind a preload request for some charger you haven't even scrolled
-    // to yet.
-    if (hasRangeForSearch) {
+    // If you checked a "prefer stops near" box, don't show any plan at all
+    // until the family-friendly check below has an actual answer — you'd
+    // rather wait a moment than be shown "Fewest stops" (which knows
+    // nothing about your amenity preference) and mistake it for the real
+    // recommendation, or take a stop you wouldn't have chosen. Every other
+    // case (no amenity preference, or no chargers found at all) has
+    // nothing to wait on, so it shows straight away as before.
+    const willCheckAmenities = hasRangeForSearch && preferredAmenitiesForSearch.length > 0 && chargers.length > 0;
+
+    if (hasRangeForSearch && !willCheckAmenities) {
       setStatus("Working out charging plan options...");
       planStrategies = buildPlanStrategies(chargers, route, rangeMilesForSearch);
       renderPlanOptions(planStrategies);
       selectPlanStrategy(planStrategies[0].key);
-    } else {
+    } else if (!hasRangeForSearch) {
       // Step 5: no range given, so just draw every nearby charger.
       drawChargers(chargers);
     }
-
-    // Now quietly fetch "what's nearby" for every *other* charger too, in
-    // the background — not awaited, so it doesn't hold up anything below.
-    // By the time you click a different pin or plan, that info is usually
-    // already cached and appears instantly instead of showing "Checking
-    // what's nearby..." for a few seconds. See preloadAmenities() for how
-    // it stays polite to Overpass's rate limits, and getAmenityInfo() for
-    // why this never duplicates a fetch the plan above already started.
-    preloadAmenities(chargers);
 
     if (chargers.length === 0) {
       setStatus("Route found, but no chargers turned up nearby. Try a different route option.");
@@ -570,49 +570,62 @@ async function selectRoute(index) {
       renderLegend();
     }
 
-    // Up to 3 more plan boxes ("Family-friendly stops" and, if needed, two
-    // more forgiving distance tiers of it) only appear if at least one
-    // amenity preference was checked. They're built after the other 3 since
-    // each has to check candidates against Open Street Map data one at a
-    // time, which takes a moment longer than the instant math the rest use.
-    // While that's happening, the plan panel is still showing "Fewest
-    // stops" — a plan that knows nothing about your amenity preference —
-    // so this note makes clear that isn't the final word yet.
-    if (hasRangeForSearch && preferredAmenitiesForSearch.length > 0 && chargers.length > 0) {
-      setStatus("Checking nearby amenities for family-friendly options...");
+    if (willCheckAmenities) {
+      // The 3 "instant math" strategies are cheap, so compute them now —
+      // but hold off on showing any of them (see the note above) until the
+      // amenity-aware options are ready to show alongside them.
+      planStrategies = buildPlanStrategies(chargers, route, rangeMilesForSearch);
+
+      setStatus("Finding the best stop near your preferred amenities...");
       planNoteEl.textContent =
-        "🔍 Still checking family-friendly options — this plan may switch automatically once that's done.";
+        "🔍 Finding the best stop near your preferred amenities — this takes a moment longer than the other plans, since it checks candidates one at a time rather than just doing math. Nothing's shown below until it has a real answer.";
       planNoteEl.hidden = false;
+
+      // Awaited here, before the general preload below, so these checks —
+      // the ones that actually decide what you're about to be shown — get
+      // first claim on the connection pool rather than competing with a
+      // preload request for some charger that turns out not to matter.
       const familyStrategies = await buildFamilyStrategies(
         chargers,
         route,
         rangeMilesForSearch,
         preferredAmenitiesForSearch
       );
+      if (myRouteGeneration !== routeSelectionGeneration) return; // a different route was picked meanwhile
+
       planNoteEl.hidden = true;
       planStrategies.push(...familyStrategies);
       renderPlanOptions(planStrategies);
 
-      // You checked "prefer stops near X" — so the moment a family-friendly
-      // option is ready, it should become what's actually shown, not just
-      // one more box you'd have to notice and click yourself. Only does
-      // this if you haven't already picked a plan yourself in the meantime;
-      // your own choice always wins. familyStrategies is ordered strictest
-      // to loosest and stops as soon as one fully matches, so the last one
-      // built is always the best result actually found.
-      if (!userPickedPlanManually && familyStrategies.length > 0) {
+      // familyStrategies is ordered strictest to loosest and stops as soon
+      // as one tier fully matches, so the last one built is always the
+      // best result actually found — shown directly, not left as one more
+      // box you'd have to notice and click. (userPickedPlanManually can't
+      // actually be true yet here, since no plan box existed to click
+      // before this point — kept as a safety net in case that ever changes.)
+      if (!userPickedPlanManually) {
         selectPlanStrategy(familyStrategies[familyStrategies.length - 1].key);
-      } else {
-        markSelectedCard(planOptionsEl, (child) => child.dataset.planKey === selectedPlanKey);
       }
       setStatus(chargerFoundStatus(chargers));
     }
+
+    // Now quietly fetch "what's nearby" for every *other* charger too, in
+    // the background — not awaited, so it doesn't hold up anything above.
+    // By the time you click a different pin or plan, that info is usually
+    // already cached and appears instantly instead of showing "Checking
+    // what's nearby..." for a few seconds. See preloadAmenities() for how
+    // it stays polite to Overpass's rate limits, and getAmenityInfo() for
+    // why this never duplicates a fetch already made above.
+    preloadAmenities(chargers);
   } catch (err) {
+    if (myRouteGeneration !== routeSelectionGeneration) return; // a different route superseded this failure
     console.error(err);
     setStatus(err.message || "Something went wrong finding chargers. Please try again.", true);
   } finally {
-    planNoteEl.hidden = true; // safety net — never leave the "still checking" note stuck up on an error
-    setLoading(false);
+    if (myRouteGeneration === routeSelectionGeneration) {
+      planNoteEl.hidden = true; // safety net — never leave the "still checking" note stuck up on an error
+      setLoading(false);
+    }
   }
 }
 
