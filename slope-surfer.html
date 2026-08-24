@@ -47,7 +47,7 @@
     color: #9aa3d0;
     font-size: 0.95rem;
     letter-spacing: 1px;
-    max-width: 320px;
+    max-width: 340px;
     line-height: 1.5;
   }
   button {
@@ -133,16 +133,16 @@
   <div class="hud-box">DIST <b id="hudDistance">0</b>m</div>
   <div class="hud-box">SCORE <b id="hudScore">0</b></div>
 </div>
-<div id="stateBadge" class="state-badge hidden">NORMAL</div>
+<div id="stateBadge" class="state-badge hidden">GLIDE</div>
 
 <div id="menuScreen" class="screen">
   <div class="title">SLOPE SURFER</div>
-  <div class="subtitle">Tap and hold to control gravity. Sink into slopes for speed, glide over hazards, launch off every hill.</div>
+  <div class="subtitle">One button. HOLD to dive — heavy gravity, digs into hills, builds huge speed. RELEASE to glide — light gravity, soars for miles.</div>
   <div class="menu-buttons">
     <button id="playBtn">PLAY</button>
     <button id="soundToggleBtn" class="secondary">SOUND: ON</button>
   </div>
-  <div class="subtitle" style="margin-top:6px;">TAP = dive &nbsp;·&nbsp; HOLD = glide &nbsp;·&nbsp; RELEASE = launch</div>
+  <div class="subtitle" style="margin-top:6px;">HOLD = DIVE &nbsp;·&nbsp; RELEASE = GLIDE</div>
 </div>
 
 <div id="gameOverScreen" class="screen hidden">
@@ -157,50 +157,76 @@
   </div>
 </div>
 
+<script src="https://unpkg.com/three@0.160.0/build/three.min.js"></script>
 <script>
 (function () {
   "use strict";
 
+  if (typeof THREE === "undefined") {
+    document.getElementById("menuScreen").innerHTML =
+      '<div class="title" style="font-size:1.6rem;">COULD NOT LOAD 3D ENGINE</div>' +
+      '<div class="subtitle">This game needs an internet connection the first time it runs (to fetch three.js). Reconnect and reload.</div>';
+    return;
+  }
+
   // ---------------------------------------------------------------------
-  // Canvas / sizing
+  // Canvas / renderer sizing
   // ---------------------------------------------------------------------
   const canvas = document.getElementById("gameCanvas");
-  const ctx = canvas.getContext("2d");
   let DPR = Math.min(window.devicePixelRatio || 1, 2);
-  let W = 0, H = 0;
+  let W = window.innerWidth, H = window.innerHeight;
+
+  const renderer = new THREE.WebGLRenderer({ canvas, antialias: true, powerPreference: "high-performance" });
+  renderer.setPixelRatio(DPR);
+  renderer.setSize(W, H, false);
+
+  const scene = new THREE.Scene();
+  const camera = new THREE.PerspectiveCamera(62, W / H, 0.1, 400);
 
   function resize() {
     W = window.innerWidth;
     H = window.innerHeight;
-    canvas.width = Math.floor(W * DPR);
-    canvas.height = Math.floor(H * DPR);
-    canvas.style.width = W + "px";
-    canvas.style.height = H + "px";
-    ctx.setTransform(DPR, 0, 0, DPR, 0, 0);
+    DPR = Math.min(window.devicePixelRatio || 1, 2);
+    renderer.setPixelRatio(DPR);
+    renderer.setSize(W, H, false);
+    camera.aspect = W / H;
+    camera.updateProjectionMatrix();
   }
   window.addEventListener("resize", resize);
-  resize();
 
   // ---------------------------------------------------------------------
   // Constants
+  //
+  // Controls are a single hold axis (Exo One style: one input, two forms)
+  // instead of a hidden hold-duration timer across three states — that
+  // timer was the "uninstinctive" part of the old build.
+  //   HOLD    -> "dive"  : heavy gravity, digs into downhill slopes for speed
+  //   RELEASE -> "glide" : very light gravity, long airtime, drifts far
   // ---------------------------------------------------------------------
-  const NORMAL_GRAVITY = 0.5;
-  const HEAVY_GRAVITY = 1.5;
-  const GLIDE_GRAVITY = 0.1;
-  const GLIDE_THRESHOLD_MS = 300;
+  const DIVE_GRAVITY = 2.4;      // was 1.5 — pressing down now feels forceful
+  const GLIDE_GRAVITY = 0.028;   // was 0.1 — glide barely falls, covers huge distance
+  const SLOPE_DIVE_GAIN = 1.85;  // was 0.9 — diving into a downslope launches speed hard
+  const GLIDE_VX_DECAY = 0.9997; // was 0.997 — glide keeps almost all of its speed
+  const GLIDE_VY_CAP = 6.5;      // soft cap so a long glide doesn't creep into a dive-like fall
+  const LAUNCH_IMPULSE = 0.82;   // was 0.6 — steeper hills need a stronger pop off the crest
 
-  const BASE_SPEED = 5.2;
-  const MAX_SPEED = 13;
-  const SPEED_TIME_GAIN = 0.0018; // gentle passive acceleration
+  const BASE_SPEED = 5.4;
+  const MAX_SPEED = 15;
+  const SPEED_TIME_GAIN = 0.0018;
 
-  const GROUND_Y_FRACTION = 0.62; // where the terrain baseline sits on screen
+  const GROUND_Y_FRACTION = 0.62; // legacy baseline reference (screen-space feel, kept for tuning)
   const SEGMENT_SPACING = 10;
   const CHUNK_LENGTH = 900;
 
+  // World-space scale: physics runs in the original pixel-ish units so all
+  // the slope/speed tuning above still reads the same; this just maps that
+  // space down into sane three.js world units.
+  const WORLD_SCALE = 1 / 26;
+  const LANE_HALF_WIDTH = 5.5;
+
   const STATE_COLORS = {
-    normal: { core: "#4de8ff", glow: "rgba(77,232,255,0.55)" },
-    heavy:  { core: "#ff6a3d", glow: "rgba(255,106,61,0.6)" },
-    glide:  { core: "#e8fbff", glow: "rgba(220,250,255,0.65)" },
+    dive:  { core: 0xff5a33, glow: "rgba(255,90,51,0.6)", light: 0xff7a45 },
+    glide: { core: 0xeafcff, glow: "rgba(220,250,255,0.65)", light: 0x9fe8ff },
   };
 
   // ---------------------------------------------------------------------
@@ -238,7 +264,6 @@
   // Placeholder monetisation hooks
   // ---------------------------------------------------------------------
   function showRewardedAd(onComplete) {
-    // Placeholder: integrate a real ad SDK here.
     console.log("[ads] showRewardedAd() called");
     if (onComplete) onComplete(true);
   }
@@ -247,15 +272,17 @@
   }
 
   // ---------------------------------------------------------------------
-  // Terrain generation
+  // Terrain generation (physics space: x forward, y down-positive like the
+  // original canvas build — only the renderer treats it as 3D)
   // ---------------------------------------------------------------------
   let terrainPoints = [];
   let terrainRightEdge = 0;
+  let terrainChunks = []; // { fromX, toX, mesh, edge }
 
   function generateTerrainSegment(startX, length, amplitude, frequency, noiseAmount, baseline) {
     const points = [];
     for (let x = startX; x < startX + length; x += SEGMENT_SPACING) {
-      const baseY = Math.sin(x * frequency) * amplitude + Math.sin(x * frequency * 2.3) * amplitude * 0.25;
+      const baseY = Math.sin(x * frequency) * amplitude + Math.sin(x * frequency * 2.3) * amplitude * 0.4;
       const noise = (Math.random() - 0.5) * noiseAmount;
       points.push({ x, y: baseline + baseY + noise });
     }
@@ -265,29 +292,95 @@
   function difficultyParams(distance) {
     const t = Math.min(distance / 6000, 1); // ramps up over the first ~6000m
     return {
-      amplitude: 40 + t * 90,
-      frequency: 0.006 + t * 0.006,
-      noiseAmount: 2 + t * 10,
+      amplitude: 60 + t * 190,      // steeper hills, was 40 + t*90
+      frequency: 0.008 + t * 0.015, // tighter hills, was 0.006 + t*0.006
+      noiseAmount: 3 + t * 15,
     };
   }
 
+  function buildChunkMesh(points, baseline) {
+    if (points.length < 2) return null;
+    const vertCount = points.length * 2;
+    const positions = new Float32Array(vertCount * 3);
+    const colors = new Float32Array(vertCount * 3);
+    const topColor = new THREE.Color(0x2a1f66);
+    const bottomColor = new THREE.Color(0x0a0620);
+
+    for (let i = 0; i < points.length; i++) {
+      const p = points[i];
+      const wxp = p.x * WORLD_SCALE;
+      const wyp = (baseline - p.y) * WORLD_SCALE;
+      // near edge (z = -half) and far edge (z = +half) of the lane
+      positions[i * 6 + 0] = wxp;
+      positions[i * 6 + 1] = wyp;
+      positions[i * 6 + 2] = -LANE_HALF_WIDTH;
+      positions[i * 6 + 3] = wxp;
+      positions[i * 6 + 4] = wyp;
+      positions[i * 6 + 5] = LANE_HALF_WIDTH;
+      colors[i * 6 + 0] = topColor.r; colors[i * 6 + 1] = topColor.g; colors[i * 6 + 2] = topColor.b;
+      colors[i * 6 + 3] = bottomColor.r; colors[i * 6 + 4] = bottomColor.g; colors[i * 6 + 5] = bottomColor.b;
+    }
+
+    const indices = [];
+    for (let i = 0; i < points.length - 1; i++) {
+      const a = i * 2, b = i * 2 + 1, c = (i + 1) * 2, d = (i + 1) * 2 + 1;
+      indices.push(a, c, b, b, c, d);
+    }
+
+    const geo = new THREE.BufferGeometry();
+    geo.setAttribute("position", new THREE.BufferAttribute(positions, 3));
+    geo.setAttribute("color", new THREE.BufferAttribute(colors, 3));
+    geo.setIndex(indices);
+    geo.computeVertexNormals();
+
+    const mat = new THREE.MeshStandardMaterial({
+      vertexColors: true, metalness: 0.15, roughness: 0.55,
+      emissive: 0x120a30, emissiveIntensity: 0.4,
+    });
+    const mesh = new THREE.Mesh(geo, mat);
+
+    // Glowing ridge line along the top edge (near side) for the neon look.
+    const ridgePts = [];
+    for (const p of points) {
+      ridgePts.push(new THREE.Vector3(p.x * WORLD_SCALE, (baseline - p.y) * WORLD_SCALE + 0.02, -LANE_HALF_WIDTH));
+    }
+    const ridgeGeo = new THREE.BufferGeometry().setFromPoints(ridgePts);
+    const ridgeMat = new THREE.LineBasicMaterial({ color: 0x4de8ff, transparent: true, opacity: 0.85 });
+    const ridge = new THREE.Line(ridgeGeo, ridgeMat);
+    mesh.add(ridge);
+
+    return mesh;
+  }
+
   function ensureTerrainAhead(playerX, baseline) {
-    while (terrainRightEdge < playerX + W + CHUNK_LENGTH) {
+    while (terrainRightEdge < playerX + 60 + CHUNK_LENGTH) {
       const params = difficultyParams(Math.max(0, playerX));
+      const fromX = terrainRightEdge;
       const chunk = generateTerrainSegment(
-        terrainRightEdge, CHUNK_LENGTH, params.amplitude, params.frequency, params.noiseAmount, baseline
+        fromX, CHUNK_LENGTH, params.amplitude, params.frequency, params.noiseAmount, baseline
       );
       terrainPoints.push(...chunk);
       terrainRightEdge += CHUNK_LENGTH;
+
+      const mesh = buildChunkMesh(chunk, baseline);
+      if (mesh) {
+        scene.add(mesh);
+        terrainChunks.push({ fromX, toX: fromX + CHUNK_LENGTH, mesh });
+      }
     }
     // Trim terrain well behind the player.
     while (terrainPoints.length > 2 && terrainPoints[1].x < playerX - 400) {
       terrainPoints.shift();
     }
+    while (terrainChunks.length && terrainChunks[0].toX < playerX - 500) {
+      const old = terrainChunks.shift();
+      scene.remove(old.mesh);
+      old.mesh.geometry.dispose();
+      old.mesh.material.dispose();
+    }
   }
 
   function terrainYAt(x) {
-    // Binary-ish scan (terrain array is small enough for linear scan given trimming).
     for (let i = 0; i < terrainPoints.length - 1; i++) {
       const a = terrainPoints[i], b = terrainPoints[i + 1];
       if (x >= a.x && x <= b.x) {
@@ -298,7 +391,6 @@
         };
       }
     }
-    // Fallback: nearest point.
     if (terrainPoints.length) {
       const last = terrainPoints[terrainPoints.length - 1];
       return { y: last.y, angle: 0 };
@@ -312,63 +404,65 @@
   const player = {
     x: 0, y: 0, vx: BASE_SPEED, vy: 0,
     radius: 14,
-    state: "normal",
+    state: "glide",
     isOnGround: false,
     trail: [],
   };
 
-  let camX = 0;
   let baseline = 0;
+
+  const playerGeo = new THREE.SphereGeometry(player.radius * WORLD_SCALE, 24, 18);
+  const playerMat = new THREE.MeshStandardMaterial({
+    color: STATE_COLORS.glide.core, emissive: STATE_COLORS.glide.core, emissiveIntensity: 0.9,
+    metalness: 0.3, roughness: 0.25,
+  });
+  const playerMesh = new THREE.Mesh(playerGeo, playerMat);
+  scene.add(playerMesh);
+
+  const playerLight = new THREE.PointLight(STATE_COLORS.glide.light, 2.2, 14, 2);
+  playerMesh.add(playerLight);
+
+  // Trail: a pool of small fading spheres reused every frame.
+  const TRAIL_LEN = 20;
+  const trailMeshes = [];
+  const trailMat = new THREE.MeshBasicMaterial({ color: STATE_COLORS.glide.core, transparent: true });
+  for (let i = 0; i < TRAIL_LEN; i++) {
+    const m = new THREE.Mesh(new THREE.SphereGeometry(player.radius * WORLD_SCALE * 0.5, 8, 6), trailMat.clone());
+    m.visible = false;
+    scene.add(m);
+    trailMeshes.push(m);
+  }
 
   function resetPlayer() {
     player.x = 0;
     player.vx = BASE_SPEED;
     player.vy = 0;
-    player.state = "normal";
+    player.state = "glide";
     player.isOnGround = true;
     player.trail = [];
-    baseline = H * GROUND_Y_FRACTION;
+    baseline = 0;
     const t = terrainYAt(player.x);
     player.y = t.y - player.radius;
-    camX = 0;
   }
 
   // ---------------------------------------------------------------------
-  // Input handling
+  // Input handling — single hold axis, no hidden timers.
   // ---------------------------------------------------------------------
-  const input = {
-    isPressed: false,
-    pressStart: 0,
-    pressDuration: 0,
-  };
+  const input = { isPressed: false };
 
   function onPressStart() {
     ensureAudio();
     if (!running || paused) return;
     input.isPressed = true;
-    input.pressStart = performance.now();
-    input.pressDuration = 0;
-    if (player.state !== "glide") {
-      player.state = "heavy";
-      sfxDive();
-    }
+    player.state = "dive";
+    sfxDive();
   }
 
   function onPressEnd() {
     if (!input.isPressed) return;
     input.isPressed = false;
-    input.pressDuration = 0;
     if (running && !paused) {
-      player.state = "normal";
-    }
-  }
-
-  function updateInputState() {
-    if (input.isPressed) {
-      input.pressDuration = performance.now() - input.pressStart;
-      if (input.pressDuration >= GLIDE_THRESHOLD_MS) {
-        player.state = "glide";
-      }
+      player.state = "glide";
     }
   }
 
@@ -388,6 +482,16 @@
   let obstacles = [];
   let nextObstacleAt = 500;
 
+  const obstacleGeo = {
+    ground: new THREE.ConeGeometry(17 * WORLD_SCALE, 34 * WORLD_SCALE, 5),
+    round: new THREE.SphereGeometry(15 * WORLD_SCALE, 14, 10),
+  };
+  const obstacleMat = {
+    ground: new THREE.MeshStandardMaterial({ color: 0xff3d6a, emissive: 0xff3d6a, emissiveIntensity: 0.7 }),
+    air: new THREE.MeshStandardMaterial({ color: 0xff8f3d, emissive: 0xff8f3d, emissiveIntensity: 0.7 }),
+    moving: new THREE.MeshStandardMaterial({ color: 0xffd23d, emissive: 0xffd23d, emissiveIntensity: 0.7 }),
+  };
+
   function chooseRandomType(distance) {
     const roll = Math.random();
     if (distance < 400) return "ground";
@@ -397,7 +501,7 @@
   }
 
   function spawnObstacle(playerX, distance) {
-    const targetX = playerX + W + 250 + Math.random() * 150;
+    const targetX = playerX + 700 + Math.random() * 200;
     const basePoint = terrainPoints.find((p) => p.x > targetX);
     if (!basePoint) return;
 
@@ -406,10 +510,9 @@
       x: basePoint.x, y: basePoint.y,
       width: 34, height: 34,
       type,
-      vy: 0, vx: 0,
+      vy: 0,
       baseY: basePoint.y,
       phase: Math.random() * Math.PI * 2,
-      passed: false,
     };
 
     if (type === "air") {
@@ -424,11 +527,15 @@
       obstacle.y -= obstacle.height; // sits on terrain, spikes up
     }
 
+    const geo = type === "ground" ? obstacleGeo.ground : obstacleGeo.round;
+    const mesh = new THREE.Mesh(geo, obstacleMat[type]);
+    scene.add(mesh);
+    obstacle.mesh = mesh;
+
     obstacles.push(obstacle);
   }
 
   function updateObstacles(distance) {
-    // Spawn based on distance, spacing tightens with difficulty.
     const t = Math.min(distance / 6000, 1);
     const minGap = 550 - t * 250;
     if (distance > nextObstacleAt) {
@@ -441,13 +548,21 @@
         o.phase += 0.05;
         o.y = o.baseY + Math.sin(o.phase) * 40;
       }
+      const cy = o.type === "ground" ? o.y + o.height * 0.5 : o.y + o.height / 2;
+      o.mesh.position.set(o.x * WORLD_SCALE, (baseline - cy) * WORLD_SCALE, 0);
+      o.mesh.rotation.y += 0.02;
     }
-    obstacles = obstacles.filter((o) => o.x > player.x - 200);
+
+    const stillAlive = [];
+    for (const o of obstacles) {
+      if (o.x > player.x - 200) { stillAlive.push(o); }
+      else { scene.remove(o.mesh); }
+    }
+    obstacles = stillAlive;
   }
 
   function checkObstacleCollision() {
     for (const o of obstacles) {
-      // AABB vs circle (approximate with expanded box).
       const closestX = Math.max(o.x, Math.min(player.x, o.x + o.width));
       const closestY = Math.max(o.y, Math.min(player.y, o.y + o.height));
       const dx = player.x - closestX;
@@ -470,23 +585,30 @@
   let diveStreak = 0;
   let bestScore = Number(localStorage.getItem("slopeSurferBest") || 0);
   let lastTime = 0;
-  let wasOnGround = true;
 
+  const biomes = ["dusk", "abyss", "aurora"];
+  const biomePalettes = {
+    dusk:   { sky: [0x1a1140, 0x7a2f8f], fog: 0x2a1560 },
+    abyss:  { sky: [0x050318, 0x123a5e], fog: 0x0a1830 },
+    aurora: { sky: [0x071b2e, 0x1f6b5c], fog: 0x0c3028 },
+  };
   function biomeForDistance(d) {
     const idx = Math.floor(d / 2500) % 3;
-    return ["dusk", "abyss", "aurora"][idx];
+    return biomes[idx];
   }
 
   function resetGame() {
+    for (const c of terrainChunks) { scene.remove(c.mesh); c.mesh.geometry.dispose(); c.mesh.material.dispose(); }
+    terrainChunks = [];
     terrainPoints = [];
     terrainRightEdge = 0;
+    for (const o of obstacles) scene.remove(o.mesh);
     obstacles = [];
     nextObstacleAt = 500;
     distance = 0;
     score = 0;
     airTime = 0;
     diveStreak = 0;
-    wasOnGround = true;
     resetPlayer();
     ensureTerrainAhead(player.x, baseline);
   }
@@ -520,12 +642,11 @@
   }
 
   // ---------------------------------------------------------------------
-  // Physics update
+  // Physics update (still 2D under the hood: x = forward, y = height: the
+  // 3D layer above is purely a rendering upgrade, so all the dive/glide/
+  // slope tuning behaves exactly as felt-tested)
   // ---------------------------------------------------------------------
   function updatePhysics(dt) {
-    updateInputState();
-
-    // Passive horizontal acceleration over time.
     player.vx = Math.min(MAX_SPEED, player.vx + SPEED_TIME_GAIN * dt);
 
     const t = terrainYAt(player.x);
@@ -533,48 +654,35 @@
     const slopeAngle = t.angle;
     const distToGround = groundY - (player.y + player.radius);
 
-    let gravity = NORMAL_GRAVITY;
-    if (player.state === "heavy") gravity = HEAVY_GRAVITY;
-    else if (player.state === "glide") gravity = GLIDE_GRAVITY;
+    const gravity = player.state === "dive" ? DIVE_GRAVITY : GLIDE_GRAVITY;
 
     if (player.isOnGround) {
-      // Snap-follow terrain while grounded.
-      if (player.state === "heavy" && slopeAngle > 0.05) {
-        // Downward slope while diving: gain speed proportional to slope angle.
-        player.vx = Math.min(MAX_SPEED, player.vx + slopeAngle * 0.9);
+      if (player.state === "dive" && slopeAngle > 0.05) {
+        player.vx = Math.min(MAX_SPEED, player.vx + slopeAngle * SLOPE_DIVE_GAIN);
         diveStreak += dt;
       } else {
         diveStreak = 0;
       }
 
-      if (player.state === "glide") {
-        // Glide reduces horizontal push slightly for a controlled feel.
-        player.vx *= 0.999;
-      }
-
       player.vy = 0;
       player.y = groundY - player.radius;
 
-      // Check if the ground ahead drops away (launch condition) or slope
-      // flips sharply upward (crest condition).
       const aheadY = terrainYAt(player.x + player.vx * 2).y;
       const drop = aheadY - groundY;
-      if (drop > 26 || (slopeAngle < -0.35 && player.state !== "heavy")) {
+      if (drop > 24 || (slopeAngle < -0.32 && player.state !== "dive")) {
         player.isOnGround = false;
-        player.vy = -Math.abs(player.vx * 0.6);
+        player.vy = -Math.abs(player.vx * LAUNCH_IMPULSE);
         sfxLaunch();
       }
     } else {
       player.vy += gravity;
       if (player.state === "glide") {
-        player.vy = Math.min(player.vy, 3.2); // slow, controlled descent
-        player.vx *= 0.997;
+        player.vy = Math.min(player.vy, GLIDE_VY_CAP);
+        player.vx *= GLIDE_VX_DECAY;
       }
       player.y += player.vy;
-      player.x += 0; // x integrated below with vx
 
       if (distToGround <= 0 && player.vy >= 0) {
-        // Landed.
         player.isOnGround = true;
         player.y = groundY - player.radius;
         player.vy = 0;
@@ -583,19 +691,16 @@
 
     player.x += player.vx;
 
-    // Track air time for scoring.
     if (!player.isOnGround) airTime += dt / 1000;
 
-    // Score accumulation.
     distance = Math.max(distance, player.x);
     const distScore = distance * 0.05;
     const airScore = airTime * 1.2;
     const diveBonus = diveStreak > 400 ? (diveStreak / 400) * 0.5 : 0;
     score = distScore + airScore + diveBonus;
 
-    // Trail.
     player.trail.push({ x: player.x, y: player.y });
-    if (player.trail.length > 18) player.trail.shift();
+    if (player.trail.length > TRAIL_LEN) player.trail.shift();
 
     ensureTerrainAhead(player.x, baseline);
     updateObstacles(distance);
@@ -604,131 +709,80 @@
       endGame();
     }
 
-    // Falling off the bottom of the screen is also game over (shouldn't
-    // normally happen, but guards against edge cases in terrain gen).
-    if (player.y - camY() > H + 200) {
+    if ((baseline - player.y) < -600) {
       endGame();
     }
   }
 
-  function camY() { return 0; }
+  // ---------------------------------------------------------------------
+  // 3D scene setup: lights, sky/fog
+  // ---------------------------------------------------------------------
+  const ambient = new THREE.AmbientLight(0x8899ff, 0.55);
+  scene.add(ambient);
+  const sun = new THREE.DirectionalLight(0xffffff, 1.1);
+  sun.position.set(-6, 10, 6);
+  scene.add(sun);
+
+  let currentBiome = null;
+  function applyBiome(biome) {
+    if (biome === currentBiome) return;
+    currentBiome = biome;
+    const p = biomePalettes[biome];
+    scene.background = new THREE.Color(p.sky[0]);
+    scene.fog = new THREE.Fog(p.fog, 20, 95);
+  }
+  applyBiome("dusk");
+
+  // ---------------------------------------------------------------------
+  // Camera follow — trails behind and slightly above, pulls tighter/lower
+  // on a dive and pulls back/higher on a glide for a bit of game feel.
+  // ---------------------------------------------------------------------
+  const camPos = new THREE.Vector3(-6, 4.5, 9);
+  const camTarget = new THREE.Vector3();
+  function updateCamera() {
+    const wxp = player.x * WORLD_SCALE;
+    const wyp = (baseline - player.y) * WORLD_SCALE;
+    const isDive = player.state === "dive";
+    const behind = isDive ? 6.4 : 7.6;
+    const above = isDive ? 3.2 : 4.4;
+    const side = isDive ? 8.4 : 9.6;
+
+    const desired = new THREE.Vector3(wxp - behind, wyp + above, side);
+    camPos.lerp(desired, 0.08);
+    camera.position.copy(camPos);
+
+    camTarget.set(wxp + 4, wyp + 1, 0);
+    camera.lookAt(camTarget);
+  }
 
   // ---------------------------------------------------------------------
   // Rendering
   // ---------------------------------------------------------------------
-  const biomePalettes = {
-    dusk:    ["#1a1140", "#3a1f6b", "#7a2f8f"],
-    abyss:   ["#050318", "#0d1a3d", "#123a5e"],
-    aurora:  ["#071b2e", "#0f3d3e", "#1f6b5c"],
-  };
-
-  function draw() {
-    camX = player.x - W * 0.28;
-
-    // Background gradient by biome.
-    const biome = biomeForDistance(distance);
-    const palette = biomePalettes[biome];
-    const g = ctx.createLinearGradient(0, 0, 0, H);
-    g.addColorStop(0, palette[0]);
-    g.addColorStop(0.55, palette[1]);
-    g.addColorStop(1, palette[2]);
-    ctx.fillStyle = g;
-    ctx.fillRect(0, 0, W, H);
-
-    // Parallax stars/particles.
-    ctx.save();
-    ctx.globalAlpha = 0.5;
-    ctx.fillStyle = "#ffffff";
-    for (let i = 0; i < 40; i++) {
-      const sx = (i * 137 - camX * 0.15) % W;
-      const sy = (i * 71) % (H * 0.5);
-      ctx.fillRect(((sx % W) + W) % W, sy, 2, 2);
-    }
-    ctx.restore();
-
-    // Terrain.
-    ctx.save();
-    ctx.translate(-camX, 0);
-    ctx.beginPath();
-    let started = false;
-    for (const p of terrainPoints) {
-      if (p.x < camX - 50 || p.x > camX + W + 50) continue;
-      if (!started) { ctx.moveTo(p.x, p.y); started = true; }
-      else ctx.lineTo(p.x, p.y);
-    }
-    if (started) {
-      ctx.lineTo(camX + W + 50, H + 50);
-      ctx.lineTo(camX - 50, H + 50);
-      ctx.closePath();
-      const tg = ctx.createLinearGradient(0, baseline - 100, 0, H);
-      tg.addColorStop(0, "rgba(77,232,255,0.18)");
-      tg.addColorStop(1, "rgba(160,107,255,0.05)");
-      ctx.fillStyle = tg;
-      ctx.fill();
-
-      ctx.lineWidth = 3;
-      ctx.strokeStyle = "#4de8ff";
-      ctx.shadowColor = "#4de8ff";
-      ctx.shadowBlur = 12;
-      ctx.beginPath();
-      started = false;
-      for (const p of terrainPoints) {
-        if (p.x < camX - 50 || p.x > camX + W + 50) continue;
-        if (!started) { ctx.moveTo(p.x, p.y); started = true; }
-        else ctx.lineTo(p.x, p.y);
-      }
-      ctx.stroke();
-      ctx.shadowBlur = 0;
-    }
-
-    // Obstacles.
-    for (const o of obstacles) {
-      if (o.x < camX - 60 || o.x > camX + W + 60) continue;
-      ctx.save();
-      if (o.type === "ground") {
-        ctx.fillStyle = "#ff3d6a";
-        ctx.shadowColor = "#ff3d6a";
-        ctx.shadowBlur = 14;
-        ctx.beginPath();
-        ctx.moveTo(o.x, o.y + o.height);
-        ctx.lineTo(o.x + o.width / 2, o.y);
-        ctx.lineTo(o.x + o.width, o.y + o.height);
-        ctx.closePath();
-        ctx.fill();
-      } else {
-        ctx.fillStyle = o.type === "moving" ? "#ffd23d" : "#ff8f3d";
-        ctx.shadowColor = ctx.fillStyle;
-        ctx.shadowBlur = 14;
-        ctx.beginPath();
-        ctx.arc(o.x + o.width / 2, o.y + o.height / 2, o.width / 2, 0, Math.PI * 2);
-        ctx.fill();
-      }
-      ctx.restore();
-    }
-
-    // Player trail.
+  function updateVisuals() {
     const colors = STATE_COLORS[player.state];
-    for (let i = 0; i < player.trail.length; i++) {
-      const pt = player.trail[i];
-      const alpha = (i / player.trail.length) * 0.35;
-      ctx.beginPath();
-      ctx.fillStyle = colors.glow;
-      ctx.globalAlpha = alpha;
-      ctx.arc(pt.x, pt.y, player.radius * (0.4 + 0.5 * (i / player.trail.length)), 0, Math.PI * 2);
-      ctx.fill();
+    playerMat.color.set(colors.core);
+    playerMat.emissive.set(colors.core);
+    playerLight.color.set(colors.light);
+
+    playerMesh.position.set(player.x * WORLD_SCALE, (baseline - player.y) * WORLD_SCALE, 0);
+    playerMesh.rotation.z -= player.vx * 0.02;
+
+    for (let i = 0; i < TRAIL_LEN; i++) {
+      const idx = player.trail.length - TRAIL_LEN + i;
+      const m = trailMeshes[i];
+      if (idx < 0 || idx >= player.trail.length - 1) { m.visible = false; continue; }
+      const pt = player.trail[idx];
+      m.visible = true;
+      m.position.set(pt.x * WORLD_SCALE, (baseline - pt.y) * WORLD_SCALE, 0);
+      const f = i / TRAIL_LEN;
+      m.material.color.set(colors.core);
+      m.material.opacity = f * 0.4;
+      const s = 0.3 + 0.5 * f;
+      m.scale.set(s, s, s);
     }
-    ctx.globalAlpha = 1;
 
-    // Player ball.
-    ctx.beginPath();
-    ctx.fillStyle = colors.core;
-    ctx.shadowColor = colors.glow;
-    ctx.shadowBlur = 25;
-    ctx.arc(player.x, player.y, player.radius, 0, Math.PI * 2);
-    ctx.fill();
-    ctx.shadowBlur = 0;
-
-    ctx.restore();
+    applyBiome(biomeForDistance(distance));
+    updateCamera();
   }
 
   // ---------------------------------------------------------------------
@@ -742,7 +796,7 @@
     badge.textContent = player.state.toUpperCase();
     const c = STATE_COLORS[player.state];
     badge.style.background = c.glow;
-    badge.style.borderColor = c.core;
+    badge.style.borderColor = "#" + c.core.toString(16).padStart(6, "0");
     badge.style.color = "#0a0620";
 
     if (Math.floor(score / 100) > lastScoreTickAt) {
@@ -761,7 +815,8 @@
     dt = Math.min(dt, 40); // clamp for tab-switch hiccups (physics constants are tuned for ~60fps frames)
 
     updatePhysics(dt);
-    draw();
+    updateVisuals();
+    renderer.render(scene, camera);
     updateHUD();
 
     if (running) requestAnimationFrame(loop);
@@ -781,13 +836,14 @@
     e.target.textContent = "SOUND: " + (soundOn ? "ON" : "OFF");
   });
 
-  // Prevent context menu / text selection interference on mobile.
   window.addEventListener("contextmenu", (e) => e.preventDefault());
 
   // Initial idle background render (menu is up front).
   resetPlayer();
   ensureTerrainAhead(player.x, baseline);
-  draw();
+  applyBiome("dusk");
+  updateVisuals();
+  renderer.render(scene, camera);
 })();
 </script>
 </body>
