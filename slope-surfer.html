@@ -47,7 +47,7 @@
     color: #9aa3d0;
     font-size: 0.95rem;
     letter-spacing: 1px;
-    max-width: 340px;
+    max-width: 360px;
     line-height: 1.5;
   }
   button {
@@ -73,10 +73,8 @@
     padding: 12px 40px;
   }
   .menu-buttons { display: flex; flex-direction: column; gap: 14px; margin-top: 8px; }
-  .toggle-row {
-    display: flex; align-items: center; gap: 10px;
-    color: #9aa3d0; font-size: 0.9rem;
-  }
+  .menu-row { display: flex; gap: 10px; flex-wrap: wrap; justify-content: center; }
+  .menu-row button.secondary { padding: 10px 26px; font-size: 0.95rem; }
   #hud {
     position: absolute;
     top: 0; left: 0; right: 0;
@@ -110,18 +108,60 @@
     z-index: 5;
     border: 1px solid transparent;
     transition: background 0.15s ease, border-color 0.15s ease, color 0.15s ease;
+    white-space: nowrap;
   }
   .stat-line { display: flex; gap: 22px; margin: 4px 0 10px; font-size: 1rem; }
   .stat-line span b { color: #4de8ff; }
-  #muteBtn {
-    pointer-events: auto;
-    background: rgba(15, 10, 40, 0.55);
-    border: 1px solid rgba(120, 180, 255, 0.25);
-    border-radius: 10px;
-    padding: 6px 12px;
-    font-size: 1rem;
-    box-shadow: none;
+
+  /* Guide modal */
+  #guideModal {
+    position: absolute; inset: 0; z-index: 20;
+    background: rgba(5, 3, 20, 0.85);
+    display: flex; align-items: center; justify-content: center;
+    padding: 24px;
+  }
+  .guide-card {
+    background: rgba(20, 14, 50, 0.95);
+    border: 1px solid rgba(120, 180, 255, 0.3);
+    border-radius: 16px;
+    padding: 26px 28px;
+    max-width: 420px;
     color: #eafcff;
+    text-align: left;
+  }
+  .guide-card h3 { font-size: 1.3rem; margin-bottom: 14px; color: #4de8ff; letter-spacing: 1px; }
+  .guide-row { display: flex; gap: 12px; margin-bottom: 10px; align-items: baseline; }
+  .guide-key {
+    flex: 0 0 auto; min-width: 92px;
+    font-weight: 700; font-size: 0.82rem; letter-spacing: 0.5px;
+    color: #0a0620; background: linear-gradient(90deg, #4de8ff, #8f6bff);
+    border-radius: 6px; padding: 3px 8px; text-align: center;
+  }
+  .guide-desc { color: #cfe6ff; font-size: 0.88rem; line-height: 1.4; }
+  .guide-card button { margin-top: 18px; width: 100%; }
+
+  /* Mobile touch controls */
+  #touchControls {
+    position: absolute; inset: 0; z-index: 5; pointer-events: none;
+  }
+  .touch-btn {
+    position: absolute;
+    pointer-events: auto;
+    width: 64px; height: 64px;
+    border-radius: 50%;
+    background: rgba(15, 10, 40, 0.55);
+    border: 1px solid rgba(120, 180, 255, 0.35);
+    color: #eafcff;
+    font-size: 1.4rem;
+    display: flex; align-items: center; justify-content: center;
+    -webkit-tap-highlight-color: transparent;
+  }
+  .touch-btn:active { background: rgba(77, 232, 255, 0.35); }
+  #btnLeft  { left: 18px;  bottom: 26px; }
+  #btnRight { left: 96px;  bottom: 26px; }
+  #btnRoll  {
+    right: 18px; bottom: 26px; width: auto; height: auto; border-radius: 999px;
+    padding: 14px 22px; font-size: 0.85rem; font-weight: 700; letter-spacing: 1px;
   }
 </style>
 </head>
@@ -133,16 +173,35 @@
   <div class="hud-box">DIST <b id="hudDistance">0</b>m</div>
   <div class="hud-box">SCORE <b id="hudScore">0</b></div>
 </div>
-<div id="stateBadge" class="state-badge hidden">GLIDE</div>
+<div id="stateBadge" class="state-badge hidden">RUN</div>
+
+<div id="touchControls" class="hidden">
+  <div id="btnLeft" class="touch-btn">◀</div>
+  <div id="btnRight" class="touch-btn">▶</div>
+  <div id="btnRoll" class="touch-btn">ROLL</div>
+</div>
 
 <div id="menuScreen" class="screen">
   <div class="title">SLOPE SURFER</div>
-  <div class="subtitle">One button. HOLD to dive — heavy gravity, digs into hills, builds huge speed. RELEASE to glide — light gravity, soars for miles.</div>
+  <div class="subtitle">Run, tuck into a ball to roll the hills, or launch and glide. One button controls gravity everywhere: hold for heavy, let go for light.</div>
   <div class="menu-buttons">
     <button id="playBtn">PLAY</button>
-    <button id="soundToggleBtn" class="secondary">SOUND: ON</button>
+    <div class="menu-row">
+      <button id="soundToggleBtn" class="secondary">SOUND: ON</button>
+      <button id="guideBtn" class="secondary">GUIDE</button>
+    </div>
   </div>
-  <div class="subtitle" style="margin-top:6px;">HOLD = DIVE &nbsp;·&nbsp; RELEASE = GLIDE</div>
+</div>
+
+<div id="guideModal" class="hidden">
+  <div class="guide-card">
+    <h3>HOW TO PLAY</h3>
+    <div class="guide-row"><div class="guide-key">A/D or ←/→</div><div class="guide-desc">Move left / right across the lane.</div></div>
+    <div class="guide-row"><div class="guide-key">SPACE / TAP</div><div class="guide-desc">Jump when running. Hold anywhere = heavy gravity (dig into slopes, dive fast). Release = light gravity (glide far, roll easy).</div></div>
+    <div class="guide-row"><div class="guide-key">R / ROLL</div><div class="guide-desc">Toggle Roll mode on the ground — tuck into a ball to surf the hills.</div></div>
+    <div class="guide-row"><div class="guide-key">AIRBORNE</div><div class="guide-desc">Any time you leave the ground you're Gliding — same hold/release gravity rule applies.</div></div>
+    <button id="guideCloseBtn">GOT IT</button>
+  </div>
 </div>
 
 <div id="gameOverScreen" class="screen hidden">
@@ -168,6 +227,15 @@
       '<div class="subtitle">This game needs an internet connection the first time it runs (to fetch three.js). Reconnect and reload.</div>';
     return;
   }
+
+  // =======================================================================
+  // This file is one page, but it is organized to mirror four components,
+  // same separation of concerns you'd get from separate Unity scripts:
+  //   PhysicsController -> updatePhysics() + everything under "Physics"
+  //   PlayerController  -> the `player` state object + "Input handling"
+  //   LevelManager      -> "Terrain generation" + "Obstacles"
+  //   UIManager         -> "HUD updates" + the menu/guide/game-over wiring
+  // =======================================================================
 
   // ---------------------------------------------------------------------
   // Canvas / renderer sizing
@@ -197,24 +265,37 @@
   // ---------------------------------------------------------------------
   // Constants
   //
-  // Controls are a single hold axis (Exo One style: one input, two forms)
-  // instead of a hidden hold-duration timer across three states — that
-  // timer was the "uninstinctive" part of the old build.
-  //   HOLD    -> "dive"  : heavy gravity, digs into downhill slopes for speed
-  //   RELEASE -> "glide" : very light gravity, long airtime, drifts far
+  // Three ground/air states (per the design doc):
+  //   RUN  -> upright, auto-forward, jump only, no gravity control
+  //   ROLL -> ball form (toggled with R / the ROLL button), slope-boosted
+  //   GLIDE -> airborne, whichever way you got there
+  //
+  // Gravity control is a single hold axis, same everywhere it applies
+  // (Roll and Glide) rather than a separate rule per state — that's what
+  // made the last iteration's controls click, so it carries forward:
+  //   HOLD    -> "heavy" gravity : digs into slopes, dives fast
+  //   RELEASE -> "light" gravity : floats, rolls freely, glides far
+  //
+  // Note on tuning: the design doc's Roll spec suggests heavy/light as
+  // g_base * 3.0 / g_base * 0.3 (10x spread). That ratio is a good
+  // starting point, but the previous round of feedback asked explicitly
+  // for gravity to feel "more prominent" and glide to "go a lot further,"
+  // which needed a much wider spread than 10x once play-tested. The
+  // values below keep that already-tuned feel rather than resetting to
+  // the doc's placeholder ratio.
   // ---------------------------------------------------------------------
-  const DIVE_GRAVITY = 2.4;      // was 1.5 — pressing down now feels forceful
-  const GLIDE_GRAVITY = 0.028;   // was 0.1 — glide barely falls, covers huge distance
-  const SLOPE_DIVE_GAIN = 1.85;  // was 0.9 — diving into a downslope launches speed hard
-  const GLIDE_VX_DECAY = 0.9997; // was 0.997 — glide keeps almost all of its speed
+  const HEAVY_GRAVITY = 2.4;     // was DIVE_GRAVITY
+  const LIGHT_GRAVITY = 0.028;   // was GLIDE_GRAVITY
+  const SLOPE_BOOST_K = 1.85;    // Boost = gravity * slopeAngle * SLOPE_BOOST_K, only in Roll
+  const GLIDE_VX_DECAY = 0.9997; // glide keeps almost all of its speed
   const GLIDE_VY_CAP = 6.5;      // soft cap so a long glide doesn't creep into a dive-like fall
-  const LAUNCH_IMPULSE = 0.82;   // was 0.6 — steeper hills need a stronger pop off the crest
+  const LAUNCH_IMPULSE = 0.82;   // pop off a crest while rolling/running
+  const JUMP_IMPULSE = 7.2;      // explicit jump from Run
 
   const BASE_SPEED = 5.4;
   const MAX_SPEED = 15;
   const SPEED_TIME_GAIN = 0.0018;
 
-  const GROUND_Y_FRACTION = 0.62; // legacy baseline reference (screen-space feel, kept for tuning)
   const SEGMENT_SPACING = 10;
   const CHUNK_LENGTH = 900;
 
@@ -224,9 +305,18 @@
   const WORLD_SCALE = 1 / 26;
   const LANE_HALF_WIDTH = 5.5;
 
+  // Lateral (left/right) movement, in the same physics units as x/y.
+  const LAT_ACCEL = 0.85;
+  const LAT_MAX_SPEED = 3.6;
+  const LAT_FRICTION = 0.82;
+  const LAT_LIMIT = 120; // world ~4.6, safely inside the LANE_HALF_WIDTH=5.5 ribbon
+  const LANE_SLOTS = [-85, 0, 85]; // where obstacles can spawn laterally
+  const OBSTACLE_LAT_RADIUS = 42;
+
   const STATE_COLORS = {
-    dive:  { core: 0xff5a33, glow: "rgba(255,90,51,0.6)", light: 0xff7a45 },
-    glide: { core: 0xeafcff, glow: "rgba(220,250,255,0.65)", light: 0x9fe8ff },
+    run:   { core: 0x3dffb0, glow: "rgba(61,255,176,0.55)", light: 0x6dffc8 },
+    heavy: { core: 0xff5a33, glow: "rgba(255,90,51,0.6)",   light: 0xff7a45 },
+    light: { core: 0xeafcff, glow: "rgba(220,250,255,0.65)", light: 0x9fe8ff },
   };
 
   // ---------------------------------------------------------------------
@@ -256,7 +346,9 @@
     o.stop(now + dur);
   }
   function sfxLaunch() { blip(520, 0.18, "triangle", 0.09); }
+  function sfxJump() { blip(660, 0.1, "square", 0.07); }
   function sfxDive() { blip(140, 0.12, "sawtooth", 0.06); }
+  function sfxRoll() { blip(320, 0.08, "triangle", 0.05); }
   function sfxGameOver() { blip(90, 0.5, "square", 0.08); }
   function sfxScoreTick() { blip(880, 0.06, "sine", 0.04); }
 
@@ -271,13 +363,13 @@
     console.log("[ads] showInterstitialAd() called");
   }
 
-  // ---------------------------------------------------------------------
-  // Terrain generation (physics space: x forward, y down-positive like the
-  // original canvas build — only the renderer treats it as 3D)
-  // ---------------------------------------------------------------------
+  // =======================================================================
+  // LevelManager — terrain generation
+  // (physics space: x forward, y down-positive; only the renderer is 3D)
+  // =======================================================================
   let terrainPoints = [];
   let terrainRightEdge = 0;
-  let terrainChunks = []; // { fromX, toX, mesh, edge }
+  let terrainChunks = []; // { fromX, toX, mesh }
 
   function generateTerrainSegment(startX, length, amplitude, frequency, noiseAmount, baseline) {
     const points = [];
@@ -292,8 +384,8 @@
   function difficultyParams(distance) {
     const t = Math.min(distance / 6000, 1); // ramps up over the first ~6000m
     return {
-      amplitude: 60 + t * 190,      // steeper hills, was 40 + t*90
-      frequency: 0.008 + t * 0.015, // tighter hills, was 0.006 + t*0.006
+      amplitude: 60 + t * 190,
+      frequency: 0.008 + t * 0.015,
       noiseAmount: 3 + t * 15,
     };
   }
@@ -310,7 +402,6 @@
       const p = points[i];
       const wxp = p.x * WORLD_SCALE;
       const wyp = (baseline - p.y) * WORLD_SCALE;
-      // near edge (z = -half) and far edge (z = +half) of the lane
       positions[i * 6 + 0] = wxp;
       positions[i * 6 + 1] = wyp;
       positions[i * 6 + 2] = -LANE_HALF_WIDTH;
@@ -339,7 +430,6 @@
     });
     const mesh = new THREE.Mesh(geo, mat);
 
-    // Glowing ridge line along the top edge (near side) for the neon look.
     const ridgePts = [];
     for (const p of points) {
       ridgePts.push(new THREE.Vector3(p.x * WORLD_SCALE, (baseline - p.y) * WORLD_SCALE + 0.02, -LANE_HALF_WIDTH));
@@ -368,7 +458,6 @@
         terrainChunks.push({ fromX, toX: fromX + CHUNK_LENGTH, mesh });
       }
     }
-    // Trim terrain well behind the player.
     while (terrainPoints.length > 2 && terrainPoints[1].x < playerX - 400) {
       terrainPoints.shift();
     }
@@ -398,34 +487,50 @@
     return { y: 0, angle: 0 };
   }
 
-  // ---------------------------------------------------------------------
-  // Player
-  // ---------------------------------------------------------------------
+  // =======================================================================
+  // PlayerController — player state, meshes, input
+  // =======================================================================
   const player = {
     x: 0, y: 0, vx: BASE_SPEED, vy: 0,
+    lat: 0, latVel: 0,
     radius: 14,
-    state: "glide",
-    isOnGround: false,
+    mode: "run",          // "run" | "roll" (ground locomotion form, toggled with R)
+    gravityMode: "light", // "heavy" | "light" (driven by hold/release, applies in roll + air)
+    isOnGround: true,
     trail: [],
   };
 
+  function visualState() {
+    if (!player.isOnGround) return player.gravityMode === "heavy" ? "heavy" : "light";
+    if (player.mode === "roll") return player.gravityMode === "heavy" ? "heavy" : "light";
+    return "run";
+  }
+  function stateLabel() {
+    if (!player.isOnGround) return "GLIDE · " + player.gravityMode.toUpperCase();
+    if (player.mode === "roll") return "ROLL · " + player.gravityMode.toUpperCase();
+    return "RUN";
+  }
+
   let baseline = 0;
 
-  const playerGeo = new THREE.SphereGeometry(player.radius * WORLD_SCALE, 24, 18);
+  // Run visual: upright capsule. Roll/Glide visual: ball (flattened a touch
+  // while gliding to read as "surfing" rather than a plain rolling ball).
+  const runGeo = new THREE.CapsuleGeometry(player.radius * WORLD_SCALE * 0.72, player.radius * WORLD_SCALE * 1.5, 4, 10);
+  const ballGeo = new THREE.SphereGeometry(player.radius * WORLD_SCALE, 24, 18);
   const playerMat = new THREE.MeshStandardMaterial({
-    color: STATE_COLORS.glide.core, emissive: STATE_COLORS.glide.core, emissiveIntensity: 0.9,
+    color: STATE_COLORS.run.core, emissive: STATE_COLORS.run.core, emissiveIntensity: 0.9,
     metalness: 0.3, roughness: 0.25,
   });
-  const playerMesh = new THREE.Mesh(playerGeo, playerMat);
-  scene.add(playerMesh);
+  const runMesh = new THREE.Mesh(runGeo, playerMat);
+  const ballMesh = new THREE.Mesh(ballGeo, playerMat);
+  scene.add(runMesh, ballMesh);
 
-  const playerLight = new THREE.PointLight(STATE_COLORS.glide.light, 2.2, 14, 2);
-  playerMesh.add(playerLight);
+  const playerLight = new THREE.PointLight(STATE_COLORS.run.light, 2.2, 14, 2);
+  scene.add(playerLight); // positioned explicitly each frame in updateVisuals(), not parented
 
-  // Trail: a pool of small fading spheres reused every frame.
   const TRAIL_LEN = 20;
   const trailMeshes = [];
-  const trailMat = new THREE.MeshBasicMaterial({ color: STATE_COLORS.glide.core, transparent: true });
+  const trailMat = new THREE.MeshBasicMaterial({ color: STATE_COLORS.run.core, transparent: true });
   for (let i = 0; i < TRAIL_LEN; i++) {
     const m = new THREE.Mesh(new THREE.SphereGeometry(player.radius * WORLD_SCALE * 0.5, 8, 6), trailMat.clone());
     m.visible = false;
@@ -437,7 +542,10 @@
     player.x = 0;
     player.vx = BASE_SPEED;
     player.vy = 0;
-    player.state = "glide";
+    player.lat = 0;
+    player.latVel = 0;
+    player.mode = "run";
+    player.gravityMode = "light";
     player.isOnGround = true;
     player.trail = [];
     baseline = 0;
@@ -445,25 +553,45 @@
     player.y = t.y - player.radius;
   }
 
-  // ---------------------------------------------------------------------
-  // Input handling — single hold axis, no hidden timers.
-  // ---------------------------------------------------------------------
-  const input = { isPressed: false };
+  // --- Input handling -----------------------------------------------
+  // Gravity is a single hold axis (works while Rolling or Gliding).
+  // Space/tap also triggers an explicit jump the instant it's pressed
+  // while grounded and Running. If you keep holding after that jump you
+  // stay in heavy gravity (short, snappy hop); let go early and gravity
+  // flips to light immediately, so the same jump stretches into a long
+  // glide — one consistent rule instead of a separate "hold to glide"
+  // exception for jumping.
+  const input = { isPressed: false, moveDir: 0 };
+  const heldMoveKeys = new Set();
 
   function onPressStart() {
     ensureAudio();
     if (!running || paused) return;
     input.isPressed = true;
-    player.state = "dive";
-    sfxDive();
+    player.gravityMode = "heavy";
+    if (player.isOnGround && player.mode === "run") {
+      player.isOnGround = false;
+      player.vy = -JUMP_IMPULSE;
+      sfxJump();
+    } else {
+      sfxDive();
+    }
   }
-
   function onPressEnd() {
     if (!input.isPressed) return;
     input.isPressed = false;
-    if (running && !paused) {
-      player.state = "glide";
-    }
+    if (running && !paused) player.gravityMode = "light";
+  }
+  function toggleRoll() {
+    if (!running || paused || !player.isOnGround) return;
+    player.mode = player.mode === "roll" ? "run" : "roll";
+    sfxRoll();
+  }
+  function setMoveDir() {
+    let d = 0;
+    if (heldMoveKeys.has("left")) d -= 1;
+    if (heldMoveKeys.has("right")) d += 1;
+    input.moveDir = d;
   }
 
   canvas.addEventListener("pointerdown", (e) => { e.preventDefault(); onPressStart(); });
@@ -471,14 +599,34 @@
   window.addEventListener("pointercancel", onPressEnd);
   window.addEventListener("keydown", (e) => {
     if (e.code === "Space") { e.preventDefault(); onPressStart(); }
+    else if (e.code === "KeyA" || e.code === "ArrowLeft") { heldMoveKeys.add("left"); setMoveDir(); }
+    else if (e.code === "KeyD" || e.code === "ArrowRight") { heldMoveKeys.add("right"); setMoveDir(); }
+    else if (e.code === "KeyR") { toggleRoll(); }
   });
   window.addEventListener("keyup", (e) => {
     if (e.code === "Space") { e.preventDefault(); onPressEnd(); }
+    else if (e.code === "KeyA" || e.code === "ArrowLeft") { heldMoveKeys.delete("left"); setMoveDir(); }
+    else if (e.code === "KeyD" || e.code === "ArrowRight") { heldMoveKeys.delete("right"); setMoveDir(); }
   });
 
-  // ---------------------------------------------------------------------
-  // Obstacles
-  // ---------------------------------------------------------------------
+  // Mobile touch controls: left/right strafe + roll toggle. The main
+  // canvas keeps handling jump/gravity via pointerdown above.
+  function bindHold(el, onDown, onUp) {
+    el.addEventListener("pointerdown", (e) => { e.preventDefault(); e.stopPropagation(); onDown(); });
+    el.addEventListener("pointerup", (e) => { e.stopPropagation(); onUp(); });
+    el.addEventListener("pointercancel", (e) => { e.stopPropagation(); onUp(); });
+    el.addEventListener("pointerleave", (e) => { e.stopPropagation(); onUp(); });
+  }
+  const btnLeft = document.getElementById("btnLeft");
+  const btnRight = document.getElementById("btnRight");
+  const btnRoll = document.getElementById("btnRoll");
+  bindHold(btnLeft, () => { heldMoveKeys.add("left"); setMoveDir(); }, () => { heldMoveKeys.delete("left"); setMoveDir(); });
+  bindHold(btnRight, () => { heldMoveKeys.add("right"); setMoveDir(); }, () => { heldMoveKeys.delete("right"); setMoveDir(); });
+  btnRoll.addEventListener("pointerdown", (e) => { e.preventDefault(); e.stopPropagation(); toggleRoll(); });
+
+  // =======================================================================
+  // LevelManager — obstacles
+  // =======================================================================
   let obstacles = [];
   let nextObstacleAt = 500;
 
@@ -509,6 +657,7 @@
     let obstacle = {
       x: basePoint.x, y: basePoint.y,
       width: 34, height: 34,
+      lat: LANE_SLOTS[Math.floor(Math.random() * LANE_SLOTS.length)],
       type,
       vy: 0,
       baseY: basePoint.y,
@@ -549,7 +698,7 @@
         o.y = o.baseY + Math.sin(o.phase) * 40;
       }
       const cy = o.type === "ground" ? o.y + o.height * 0.5 : o.y + o.height / 2;
-      o.mesh.position.set(o.x * WORLD_SCALE, (baseline - cy) * WORLD_SCALE, 0);
+      o.mesh.position.set(o.x * WORLD_SCALE, (baseline - cy) * WORLD_SCALE, o.lat * WORLD_SCALE);
       o.mesh.rotation.y += 0.02;
     }
 
@@ -563,6 +712,7 @@
 
   function checkObstacleCollision() {
     for (const o of obstacles) {
+      if (Math.abs(player.lat - o.lat) > OBSTACLE_LAT_RADIUS + player.radius) continue;
       const closestX = Math.max(o.x, Math.min(player.x, o.x + o.width));
       const closestY = Math.max(o.y, Math.min(player.y, o.y + o.height));
       const dx = player.x - closestX;
@@ -574,15 +724,15 @@
     return false;
   }
 
-  // ---------------------------------------------------------------------
-  // Game state
-  // ---------------------------------------------------------------------
+  // =======================================================================
+  // Game state (shared by PhysicsController + UIManager)
+  // =======================================================================
   let running = false;
   let paused = false;
   let distance = 0;
   let score = 0;
   let airTime = 0;
-  let diveStreak = 0;
+  let rollBoostStreak = 0;
   let bestScore = Number(localStorage.getItem("slopeSurferBest") || 0);
   let lastTime = 0;
 
@@ -608,7 +758,7 @@
     distance = 0;
     score = 0;
     airTime = 0;
-    diveStreak = 0;
+    rollBoostStreak = 0;
     resetPlayer();
     ensureTerrainAhead(player.x, baseline);
   }
@@ -621,6 +771,7 @@
     document.getElementById("gameOverScreen").classList.add("hidden");
     document.getElementById("hud").classList.remove("hidden");
     document.getElementById("stateBadge").classList.remove("hidden");
+    document.getElementById("touchControls").classList.remove("hidden");
     lastTime = performance.now();
     requestAnimationFrame(loop);
   }
@@ -637,31 +788,43 @@
     document.getElementById("bestScore").textContent = bestScore;
     document.getElementById("hud").classList.add("hidden");
     document.getElementById("stateBadge").classList.add("hidden");
+    document.getElementById("touchControls").classList.add("hidden");
     document.getElementById("gameOverScreen").classList.remove("hidden");
     showInterstitialAd();
   }
 
-  // ---------------------------------------------------------------------
-  // Physics update (still 2D under the hood: x = forward, y = height: the
-  // 3D layer above is purely a rendering upgrade, so all the dive/glide/
-  // slope tuning behaves exactly as felt-tested)
-  // ---------------------------------------------------------------------
+  // =======================================================================
+  // PhysicsController — still 2D under the hood (x = forward, y = height,
+  // lat = lateral offset): the 3D layer is purely a rendering upgrade, so
+  // all the roll/glide/slope tuning behaves exactly as felt-tested.
+  // =======================================================================
   function updatePhysics(dt) {
     player.vx = Math.min(MAX_SPEED, player.vx + SPEED_TIME_GAIN * dt);
+
+    // Lateral movement (Run, Roll, and Glide can all strafe).
+    player.latVel += input.moveDir * LAT_ACCEL;
+    player.latVel *= LAT_FRICTION;
+    player.latVel = Math.max(-LAT_MAX_SPEED, Math.min(LAT_MAX_SPEED, player.latVel));
+    player.lat = Math.max(-LAT_LIMIT, Math.min(LAT_LIMIT, player.lat + player.latVel));
 
     const t = terrainYAt(player.x);
     const groundY = t.y;
     const slopeAngle = t.angle;
     const distToGround = groundY - (player.y + player.radius);
 
-    const gravity = player.state === "dive" ? DIVE_GRAVITY : GLIDE_GRAVITY;
+    const gravity = player.gravityMode === "heavy" ? HEAVY_GRAVITY : LIGHT_GRAVITY;
 
     if (player.isOnGround) {
-      if (player.state === "dive" && slopeAngle > 0.05) {
-        player.vx = Math.min(MAX_SPEED, player.vx + slopeAngle * SLOPE_DIVE_GAIN);
-        diveStreak += dt;
+      if (player.mode === "roll") {
+        if (player.gravityMode === "heavy" && slopeAngle > 0.05) {
+          // Boost = GravityForce * SlopeAngleFactor
+          player.vx = Math.min(MAX_SPEED, player.vx + gravity * slopeAngle * SLOPE_BOOST_K * 0.01);
+          rollBoostStreak += dt;
+        } else {
+          rollBoostStreak = 0;
+        }
       } else {
-        diveStreak = 0;
+        rollBoostStreak = 0;
       }
 
       player.vy = 0;
@@ -669,14 +832,15 @@
 
       const aheadY = terrainYAt(player.x + player.vx * 2).y;
       const drop = aheadY - groundY;
-      if (drop > 24 || (slopeAngle < -0.32 && player.state !== "dive")) {
+      const wantsLaunch = drop > 24 || (slopeAngle < -0.32 && !(player.mode === "roll" && player.gravityMode === "heavy"));
+      if (wantsLaunch) {
         player.isOnGround = false;
         player.vy = -Math.abs(player.vx * LAUNCH_IMPULSE);
         sfxLaunch();
       }
     } else {
       player.vy += gravity;
-      if (player.state === "glide") {
+      if (player.gravityMode === "light") {
         player.vy = Math.min(player.vy, GLIDE_VY_CAP);
         player.vx *= GLIDE_VX_DECAY;
       }
@@ -696,10 +860,10 @@
     distance = Math.max(distance, player.x);
     const distScore = distance * 0.05;
     const airScore = airTime * 1.2;
-    const diveBonus = diveStreak > 400 ? (diveStreak / 400) * 0.5 : 0;
-    score = distScore + airScore + diveBonus;
+    const rollBonus = rollBoostStreak > 400 ? (rollBoostStreak / 400) * 0.5 : 0;
+    score = distScore + airScore + rollBonus;
 
-    player.trail.push({ x: player.x, y: player.y });
+    player.trail.push({ x: player.x, y: player.y, lat: player.lat });
     if (player.trail.length > TRAIL_LEN) player.trail.shift();
 
     ensureTerrainAhead(player.x, baseline);
@@ -733,25 +897,24 @@
   }
   applyBiome("dusk");
 
-  // ---------------------------------------------------------------------
   // Camera follow — trails behind and slightly above, pulls tighter/lower
-  // on a dive and pulls back/higher on a glide for a bit of game feel.
-  // ---------------------------------------------------------------------
+  // on heavy gravity and pulls back/higher on light for a bit of game feel.
   const camPos = new THREE.Vector3(-6, 4.5, 9);
   const camTarget = new THREE.Vector3();
   function updateCamera() {
     const wxp = player.x * WORLD_SCALE;
     const wyp = (baseline - player.y) * WORLD_SCALE;
-    const isDive = player.state === "dive";
-    const behind = isDive ? 6.4 : 7.6;
-    const above = isDive ? 3.2 : 4.4;
-    const side = isDive ? 8.4 : 9.6;
+    const wzp = player.lat * WORLD_SCALE;
+    const isHeavy = player.gravityMode === "heavy" && player.mode !== "run";
+    const behind = isHeavy ? 6.4 : 7.6;
+    const above = isHeavy ? 3.2 : 4.4;
+    const side = isHeavy ? 8.4 : 9.6;
 
-    const desired = new THREE.Vector3(wxp - behind, wyp + above, side);
+    const desired = new THREE.Vector3(wxp - behind, wyp + above, side + wzp * 0.5);
     camPos.lerp(desired, 0.08);
     camera.position.copy(camPos);
 
-    camTarget.set(wxp + 4, wyp + 1, 0);
+    camTarget.set(wxp + 4, wyp + 1, wzp);
     camera.lookAt(camTarget);
   }
 
@@ -759,13 +922,32 @@
   // Rendering
   // ---------------------------------------------------------------------
   function updateVisuals() {
-    const colors = STATE_COLORS[player.state];
+    const vs = visualState();
+    const colors = STATE_COLORS[vs];
     playerMat.color.set(colors.core);
     playerMat.emissive.set(colors.core);
     playerLight.color.set(colors.light);
 
-    playerMesh.position.set(player.x * WORLD_SCALE, (baseline - player.y) * WORLD_SCALE, 0);
-    playerMesh.rotation.z -= player.vx * 0.02;
+    const isRun = player.isOnGround && player.mode === "run";
+    runMesh.visible = isRun;
+    ballMesh.visible = !isRun;
+
+    const wxp = player.x * WORLD_SCALE;
+    const wzp = player.lat * WORLD_SCALE;
+    if (isRun) {
+      const bob = Math.sin(distance * 0.02) * 0.06;
+      runMesh.position.set(wxp, (baseline - player.y) * WORLD_SCALE + bob, wzp);
+      runMesh.rotation.z = -player.latVel * 0.12; // lean into turns
+      runMesh.rotation.y = -Math.PI / 2;
+      playerLight.position.copy(runMesh.position);
+    } else {
+      ballMesh.position.set(wxp, (baseline - player.y) * WORLD_SCALE, wzp);
+      ballMesh.rotation.z -= player.vx * 0.02;
+      const isGlideAir = !player.isOnGround;
+      const flat = isGlideAir ? 0.62 : 1.0;
+      ballMesh.scale.set(1, flat, 1);
+      playerLight.position.copy(ballMesh.position);
+    }
 
     for (let i = 0; i < TRAIL_LEN; i++) {
       const idx = player.trail.length - TRAIL_LEN + i;
@@ -773,7 +955,7 @@
       if (idx < 0 || idx >= player.trail.length - 1) { m.visible = false; continue; }
       const pt = player.trail[idx];
       m.visible = true;
-      m.position.set(pt.x * WORLD_SCALE, (baseline - pt.y) * WORLD_SCALE, 0);
+      m.position.set(pt.x * WORLD_SCALE, (baseline - pt.y) * WORLD_SCALE, pt.lat * WORLD_SCALE);
       const f = i / TRAIL_LEN;
       m.material.color.set(colors.core);
       m.material.opacity = f * 0.4;
@@ -785,16 +967,16 @@
     updateCamera();
   }
 
-  // ---------------------------------------------------------------------
-  // HUD updates
-  // ---------------------------------------------------------------------
+  // =======================================================================
+  // UIManager — HUD + menu/guide/game-over wiring
+  // =======================================================================
   let lastScoreTickAt = 0;
   function updateHUD() {
     document.getElementById("hudDistance").textContent = Math.floor(distance);
     document.getElementById("hudScore").textContent = Math.floor(score);
     const badge = document.getElementById("stateBadge");
-    badge.textContent = player.state.toUpperCase();
-    const c = STATE_COLORS[player.state];
+    badge.textContent = stateLabel();
+    const c = STATE_COLORS[visualState()];
     badge.style.background = c.glow;
     badge.style.borderColor = "#" + c.core.toString(16).padStart(6, "0");
     badge.style.color = "#0a0620";
@@ -805,9 +987,6 @@
     }
   }
 
-  // ---------------------------------------------------------------------
-  // Main loop
-  // ---------------------------------------------------------------------
   function loop(now) {
     if (!running) return;
     let dt = now - lastTime;
@@ -822,9 +1001,6 @@
     if (running) requestAnimationFrame(loop);
   }
 
-  // ---------------------------------------------------------------------
-  // UI wiring
-  // ---------------------------------------------------------------------
   document.getElementById("playBtn").addEventListener("click", () => { ensureAudio(); startGame(); });
   document.getElementById("retryBtn").addEventListener("click", () => { ensureAudio(); startGame(); });
   document.getElementById("menuBtn").addEventListener("click", () => {
@@ -834,6 +1010,12 @@
   document.getElementById("soundToggleBtn").addEventListener("click", (e) => {
     soundOn = !soundOn;
     e.target.textContent = "SOUND: " + (soundOn ? "ON" : "OFF");
+  });
+  document.getElementById("guideBtn").addEventListener("click", () => {
+    document.getElementById("guideModal").classList.remove("hidden");
+  });
+  document.getElementById("guideCloseBtn").addEventListener("click", () => {
+    document.getElementById("guideModal").classList.add("hidden");
   });
 
   window.addEventListener("contextmenu", (e) => e.preventDefault());
