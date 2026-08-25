@@ -1,4 +1,8 @@
 <title>Jetbreak</title>
+<!-- Poki SDK: only actually loads/does anything when this page is served from
+     within poki.com's game portal. Harmless everywhere else — see the Poki
+     wrapper further down, which no-ops if this script never defines window.PokiSDK. -->
+<script src="https://game-cdn.poki.com/scripts/v2/poki-sdk.js"></script>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=Black+Ops+One&family=Barlow+Condensed:wght@400;600;700;800&display=swap" rel="stylesheet">
@@ -173,7 +177,7 @@
 
   /* ---- Right-edge hold controls: thrust above, ball below ---- */
   .controls{
-    position:absolute; right:14px; bottom:66px;
+    position:absolute; right:14px; bottom:18px;
     display:flex; flex-direction:column; gap:10px; z-index:6;
   }
   .ctrl-btn{
@@ -194,19 +198,9 @@
   .btn-chute{ background:linear-gradient(180deg, #5A8CB0, #2E5A78); }
   .btn-chute.active{ background:linear-gradient(180deg, #79ABCE, #3E6E90); }
 
-  /* ---- Banner ad strip ---- */
-  .banner{
-    position:absolute; left:0; right:0; bottom:0; height:48px;
-    background:linear-gradient(180deg, rgba(15,12,10,0.5), rgba(10,8,7,0.94));
-    border-top:1px solid rgba(255,178,32,0.15);
-    display:flex; align-items:center; justify-content:center; gap:8px; z-index:5;
-  }
-  .banner .tag{
-    font-size:0.6rem; letter-spacing:0.1em; text-transform:uppercase;
-    color:rgba(237,228,211,0.4); border:1px solid rgba(237,228,211,0.25);
-    border-radius:4px; padding:2px 6px;
-  }
-  .banner .txt{ font-size:0.82rem; font-weight:600; color:rgba(237,228,211,0.75); }
+  /* No in-game banner strip — ad portals (Poki etc.) place banner ads around
+     the game frame themselves; a banner drawn inside the canvas violates
+     most portals' submission guidelines and can get a game rejected. */
 
   /* ---- Overlays ---- */
   .overlay{
@@ -234,17 +228,6 @@
   }
   .card .final-label{ font-size:0.72rem; font-weight:700; letter-spacing:0.12em; text-transform:uppercase; color:var(--ink-soft); margin-bottom:18px; }
 
-  .ad-slot{
-    margin:0 0 18px; border:1.5px dashed rgba(36,29,23,0.28); border-radius:10px;
-    padding:14px 10px; background:rgba(255,255,255,0.35);
-  }
-  .ad-slot .ad-tag{
-    display:inline-block; font-size:0.58rem; letter-spacing:0.11em; text-transform:uppercase;
-    color:var(--ink-soft); border:1px solid rgba(36,29,23,0.25); border-radius:4px; padding:2px 6px; margin-bottom:8px;
-  }
-  .ad-slot .ad-copy{ font-size:0.85rem; color:var(--ink-soft); font-weight:600; }
-  .ad-slot .ad-brand{ font-family:'Black Ops One', sans-serif; font-size:0.92rem; color:var(--ink); margin-top:4px; }
-
   .btn-row{ display:flex; flex-direction:column; gap:10px; }
   button.action{
     font-family:'Barlow Condensed', sans-serif; font-weight:800; font-size:1rem;
@@ -253,6 +236,7 @@
     transition:transform 0.12s ease, filter 0.12s ease;
   }
   button.action:active{ transform:scale(0.97); }
+  button.action:disabled{ opacity:0.55; cursor:not-allowed; transform:none; }
   button.action:focus-visible{ outline:2px solid var(--ink); outline-offset:2px; }
 
   .btn-primary{ background:linear-gradient(180deg, var(--flame-cool), #C43D14); color:#fff; box-shadow:0 6px 16px -4px rgba(225,78,30,0.5); }
@@ -311,11 +295,6 @@
       <button class="ctrl-btn btn-ball" id="ballBtn"><span class="icon">⬤</span>BALL</button>
     </div>
 
-    <div class="banner">
-      <span class="tag">Ad</span>
-      <span class="txt">Ironclad Surplus — gear up between drops</span>
-    </div>
-
     <div class="overlay show start-card" id="startOverlay">
       <div class="card">
         <div class="start-title">JETBREAK</div>
@@ -333,12 +312,6 @@
         <div class="final-score" id="finalScore">0</div>
         <div class="final-label">meters cleared <span id="finalScrap"></span></div>
 
-        <div class="ad-slot" id="interstitialSlot" style="display:none;">
-          <span class="ad-tag">Interstitial · Ad</span>
-          <div class="ad-copy">refueling before the next run</div>
-          <div class="ad-brand">Ironclad Surplus</div>
-        </div>
-
         <div class="btn-row">
           <button class="btn-reward action" id="reviveBtn">✦ Watch an ad to redeploy</button>
           <button class="btn-primary action" id="restartBtn">Run it back</button>
@@ -352,12 +325,6 @@
         <p class="sub">Level 1 · Burning City — cleared.</p>
         <div class="final-score" id="winFinalScore">0</div>
         <div class="final-label">final score <span id="winFinalScrap"></span></div>
-
-        <div class="ad-slot" id="winInterstitialSlot" style="display:none;">
-          <span class="ad-tag">Interstitial · Ad</span>
-          <div class="ad-copy">a quiet moment before the next drop zone</div>
-          <div class="ad-brand">Ironclad Surplus</div>
-        </div>
 
         <div class="btn-row">
           <button class="btn-primary action" id="winRestartBtn">Fly it again</button>
@@ -383,7 +350,6 @@
   const endSub = document.getElementById('endSub');
   const finalScore = document.getElementById('finalScore');
   const finalScrap = document.getElementById('finalScrap');
-  const interstitialSlot = document.getElementById('interstitialSlot');
   const startBtn = document.getElementById('startBtn');
   const restartBtn = document.getElementById('restartBtn');
   const reviveBtn = document.getElementById('reviveBtn');
@@ -404,8 +370,27 @@
   const winOverlay = document.getElementById('winOverlay');
   const winFinalScore = document.getElementById('winFinalScore');
   const winFinalScrap = document.getElementById('winFinalScrap');
-  const winInterstitialSlot = document.getElementById('winInterstitialSlot');
   const winRestartBtn = document.getElementById('winRestartBtn');
+
+  // ---------- ad portal integration (Poki) ----------
+  // Falls back to harmless no-ops when not actually embedded on Poki (e.g. local
+  // testing, or hosted elsewhere) so the game is always fully playable on its own.
+  // When it IS embedded on poki.com, window.PokiSDK is provided by their platform
+  // script and every call below becomes real: real interstitials, real rewarded
+  // video, real revenue.
+  const Poki = window.PokiSDK || {
+    init: () => Promise.resolve(),
+    gameLoadingFinished: () => {},
+    gameplayStart: () => {},
+    gameplayStop: () => {},
+    commercialBreak: () => Promise.resolve(),
+    rewardedBreak: () => Promise.resolve(true) // standalone: always "succeeds" so the demo stays playable
+  };
+  let pokiReady = false;
+  Poki.init().then(() => {
+    pokiReady = true;
+    Poki.gameLoadingFinished(); // single-file game, nothing left to load
+  }).catch(() => { pokiReady = false; });
 
   // ---------- persistent state ----------
   let best = 0;
@@ -423,7 +408,7 @@
     DPR = Math.min(window.devicePixelRatio || 1, 2);
     const rect = frame.getBoundingClientRect();
     W = rect.width; H = rect.height;
-    GROUND_Y = H - 48 - 30;
+    GROUND_Y = H - 30;
     BASE_X = W * 0.26;
     canvas.width = W * DPR; canvas.height = H * DPR;
     ctx.setTransform(DPR,0,0,DPR,0,0);
@@ -595,16 +580,16 @@
     }
     winFinalScore.textContent = finalScoreVal;
     winFinalScrap.textContent = scrapRun > 0 ? '· ' + scrapRun + ' scrap' : '';
+    Poki.gameplayStop();
+    winOverlay.classList.add('show');
+
     deathsSinceAd++;
     try { localStorage.setItem('jetbreakAdCounter', String(deathsSinceAd)); } catch(e){}
     if (deathsSinceAd >= 3){
-      winInterstitialSlot.style.display = 'block';
       deathsSinceAd = 0;
       try { localStorage.setItem('jetbreakAdCounter', '0'); } catch(e){}
-    } else {
-      winInterstitialSlot.style.display = 'none';
+      Poki.commercialBreak(); // Poki also applies its own frequency cap on top of ours
     }
-    winOverlay.classList.add('show');
   }
 
   function addFloatingText(x, y, text, color, size){
@@ -662,6 +647,7 @@
     hint.style.opacity = '0';
     reset();
     running = true;
+    Poki.gameplayStart();
   }
 
   function currentTier(){
@@ -693,19 +679,23 @@
     endTitle.textContent = isNewBest ? 'New personal best' : 'Shot down';
     endSub.textContent = reason || 'Caught in the crossfire.';
 
+    Poki.gameplayStop();
+    endOverlay.classList.add('show');
+
+    // Real interstitial cadence: our own "every 3rd death" gate, then handed to
+    // Poki, which applies its own frequency cap on top — never shown on death #1
+    // or #2, and never more often than the portal itself allows.
     if (deathsSinceAd >= 3){
-      interstitialSlot.style.display = 'block';
       deathsSinceAd = 0;
       try { localStorage.setItem('jetbreakAdCounter', '0'); } catch(e){}
-    } else {
-      interstitialSlot.style.display = 'none';
+      Poki.commercialBreak();
     }
-    endOverlay.classList.add('show');
   }
 
   function reviveRun(){
     endOverlay.classList.remove('show');
     running = true;
+    Poki.gameplayStart();
     player.isBall = false;
     player.vy = 0;
     player.offsetX = 0; player.offsetVX = 0;
@@ -787,7 +777,14 @@
 
   startBtn.addEventListener('click', startRun);
   restartBtn.addEventListener('click', startRun);
-  reviveBtn.addEventListener('click', reviveRun);
+  reviveBtn.addEventListener('click', () => {
+    reviveBtn.disabled = true;
+    Poki.rewardedBreak().then(success => {
+      reviveBtn.disabled = false;
+      if (success) reviveRun(); // player watched the ad through — grant the continue
+      // if they skipped/closed early, leave them on the death screen to restart instead
+    });
+  });
   winRestartBtn.addEventListener('click', startRun);
 
   // ---------- update ----------
@@ -1329,7 +1326,7 @@
 
   function drawGround(){
     ctx.fillStyle = '#0F0C0A';
-    ctx.fillRect(0, GROUND_Y, W, H-GROUND_Y-48);
+    ctx.fillRect(0, GROUND_Y, W, H-GROUND_Y);
     ctx.strokeStyle = 'rgba(255,178,32,0.15)'; ctx.lineWidth = 1;
     for (let x = -groundScroll; x < W; x += 40){
       ctx.beginPath(); ctx.moveTo(x, GROUND_Y); ctx.lineTo(x-14, GROUND_Y+10); ctx.stroke();
