@@ -1,0 +1,13 @@
+{
+  "appId": "com.auberous.jetbreak",
+  "appName": "Jetbreak",
+  "webDir": "www",
+  "backgroundColor": "#161C24",
+  "android": {
+    "backgroundColor": "#161C24"
+  },
+  "ios": {
+    "backgroundColor": "#161C24",
+    "contentInset": "always"
+  }
+}

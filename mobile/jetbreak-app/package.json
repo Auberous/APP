@@ -1,0 +1,20 @@
+{
+  "name": "jetbreak-app",
+  "version": "1.0.0",
+  "private": true,
+  "description": "Jetbreak — native mobile wrapper (Capacitor)",
+  "scripts": {
+    "sync": "cap sync",
+    "open:android": "cap open android",
+    "open:ios": "cap open ios"
+  },
+  "dependencies": {
+    "@capacitor/core": "^8.5.0",
+    "@capacitor-community/admob": "^8.1.0"
+  },
+  "devDependencies": {
+    "@capacitor/cli": "^8.5.0",
+    "@capacitor/android": "^8.5.0",
+    "@capacitor/ios": "^8.5.0"
+  }
+}
