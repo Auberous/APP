@@ -378,7 +378,17 @@
   // When it IS embedded on poki.com, window.PokiSDK is provided by their platform
   // script and every call below becomes real: real interstitials, real rewarded
   // video, real revenue.
-  const Poki = window.PokiSDK || {
+  // Every real call is individually try/caught below — a throw from any one
+  // of them must never take down a function it's called from mid-gameplay.
+  const RealPoki = window.PokiSDK;
+  const Poki = RealPoki ? {
+    init: () => { try { return Promise.resolve(RealPoki.init()); } catch (e) { return Promise.reject(e); } },
+    gameLoadingFinished: () => { try { RealPoki.gameLoadingFinished(); } catch (e) { console.warn('[Jetbreak] Poki.gameLoadingFinished failed', e); } },
+    gameplayStart: () => { try { RealPoki.gameplayStart(); } catch (e) { console.warn('[Jetbreak] Poki.gameplayStart failed', e); } },
+    gameplayStop: () => { try { RealPoki.gameplayStop(); } catch (e) { console.warn('[Jetbreak] Poki.gameplayStop failed', e); } },
+    commercialBreak: () => { try { return Promise.resolve(RealPoki.commercialBreak()); } catch (e) { console.warn('[Jetbreak] Poki.commercialBreak failed', e); return Promise.resolve(); } },
+    rewardedBreak: () => { try { return Promise.resolve(RealPoki.rewardedBreak()); } catch (e) { console.warn('[Jetbreak] Poki.rewardedBreak failed', e); return Promise.resolve(false); } }
+  } : {
     init: () => Promise.resolve(),
     gameLoadingFinished: () => {},
     gameplayStart: () => {},
@@ -386,11 +396,21 @@
     commercialBreak: () => Promise.resolve(),
     rewardedBreak: () => Promise.resolve(true) // standalone: always "succeeds" so the demo stays playable
   };
+  // If Poki's actual SDK ever throws (shape mismatch, not fully loaded, etc.)
+  // that must never be allowed to halt everything textually after this block —
+  // including the code that wires up the game's buttons and starts the loop.
   let pokiReady = false;
-  Poki.init().then(() => {
-    pokiReady = true;
-    Poki.gameLoadingFinished(); // single-file game, nothing left to load
-  }).catch(() => { pokiReady = false; });
+  try {
+    Promise.resolve(Poki.init()).then(() => {
+      pokiReady = true;
+      Poki.gameLoadingFinished(); // single-file game, nothing left to load
+    }).catch((e) => {
+      pokiReady = false;
+      console.warn('[Jetbreak] Poki SDK failed to initialize — continuing without it', e);
+    });
+  } catch (e) {
+    console.warn('[Jetbreak] Poki SDK threw synchronously — continuing without it', e);
+  }
 
   // ---------- persistent state ----------
   let best = 0;

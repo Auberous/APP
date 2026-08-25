@@ -385,25 +385,36 @@
   // Ads.commercialBreak() / Ads.rewardedBreak() promise interface the rest
   // of the game calls, so nothing else in this file needs to know which
   // portal it's actually running on.
+  // Every real call below is individually try/caught — if CrazyGames' actual
+  // SDK shape ever differs even slightly from what we assume here, that must
+  // NEVER be allowed to throw uncaught, because an uncaught error partway
+  // through this script would silently stop everything textually after it
+  // from running — including the code that wires up the game's buttons and
+  // starts the game loop. Ads breaking is recoverable; the game not
+  // responding to input is not.
   const CG = (window.CrazyGames && window.CrazyGames.SDK) || null;
   const Ads = CG ? {
-    init: () => CG.init(),
-    gameLoadingFinished: () => CG.game.loadingStop(),
-    gameplayStart: () => CG.game.gameplayStart(),
-    gameplayStop: () => CG.game.gameplayStop(),
+    init: () => { try { return Promise.resolve(CG.init()); } catch (e) { return Promise.reject(e); } },
+    gameLoadingFinished: () => { try { CG.game.loadingStop(); } catch (e) { console.warn('[Jetbreak] CG.game.loadingStop failed', e); } },
+    gameplayStart: () => { try { CG.game.gameplayStart(); } catch (e) { console.warn('[Jetbreak] CG.game.gameplayStart failed', e); } },
+    gameplayStop: () => { try { CG.game.gameplayStop(); } catch (e) { console.warn('[Jetbreak] CG.game.gameplayStop failed', e); } },
     commercialBreak: () => new Promise(resolve => {
-      CG.ad.requestAd('midgame', {
-        adFinished: () => resolve(),
-        adError: () => resolve(),   // no fill / error — just continue, never block the game
-        adStarted: () => {}
-      });
+      try {
+        CG.ad.requestAd('midgame', {
+          adFinished: () => resolve(),
+          adError: () => resolve(),   // no fill / error — just continue, never block the game
+          adStarted: () => {}
+        });
+      } catch (e) { console.warn('[Jetbreak] CG.ad.requestAd(midgame) failed', e); resolve(); }
     }),
     rewardedBreak: () => new Promise(resolve => {
-      CG.ad.requestAd('rewarded', {
-        adFinished: () => resolve(true),   // watched all the way through — grant the reward
-        adError: () => resolve(false),     // no fill, skipped, or closed early — no reward
-        adStarted: () => {}
-      });
+      try {
+        CG.ad.requestAd('rewarded', {
+          adFinished: () => resolve(true),   // watched all the way through — grant the reward
+          adError: () => resolve(false),     // no fill, skipped, or closed early — no reward
+          adStarted: () => {}
+        });
+      } catch (e) { console.warn('[Jetbreak] CG.ad.requestAd(rewarded) failed', e); resolve(false); }
     })
   } : {
     init: () => Promise.resolve(),
@@ -417,7 +428,10 @@
   Ads.init().then(() => {
     adsPortalReady = true;
     Ads.gameLoadingFinished(); // single-file game, nothing left to load
-  }).catch(() => { adsPortalReady = false; });
+  }).catch((e) => {
+    adsPortalReady = false;
+    console.warn('[Jetbreak] Ad SDK failed to initialize — continuing without it', e);
+  });
 
   // ---------- persistent state ----------
   let best = 0;

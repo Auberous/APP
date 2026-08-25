@@ -391,30 +391,38 @@
 
   const AdMobPlugin = window.Capacitor && window.Capacitor.Plugins && window.Capacitor.Plugins.AdMob;
 
+  // Every real call is individually try/caught — a throw from the native
+  // bridge (plugin not registered yet, a method renamed in a newer plugin
+  // version, etc.) must never take down the function it's called from,
+  // and especially never the top-level init below, which sits ahead of the
+  // code that wires up the game's buttons and starts the loop.
   const Ads = AdMobPlugin ? {
-    init: () => AdMobPlugin.initialize({ initializeForTesting: true }).then(() => {
+    init: () => { try { return Promise.resolve(AdMobPlugin.initialize({ initializeForTesting: true })).then(() => {
       // Banner goes up once and stays up for the whole session — matches the
       // Flappy Bird model this game's monetization is built around.
-      AdMobPlugin.showBanner({
-        adId: ADMOB_BANNER_ID,
-        adSize: 'BANNER',
-        position: 'BOTTOM_CENTER',
-        isTesting: true
-      }).catch(() => {});
+      try { AdMobPlugin.showBanner({ adId: ADMOB_BANNER_ID, adSize: 'BANNER', position: 'BOTTOM_CENTER', isTesting: true }).catch(() => {}); } catch (e) { console.warn('[Jetbreak] AdMob showBanner failed', e); }
       // Pre-load one interstitial and one rewarded ad so they're instant when needed.
-      AdMobPlugin.prepareInterstitial({ adId: ADMOB_INTERSTITIAL_ID, isTesting: true }).catch(() => {});
-      AdMobPlugin.prepareRewardVideoAd({ adId: ADMOB_REWARDED_ID, isTesting: true }).catch(() => {});
-    }),
+      try { AdMobPlugin.prepareInterstitial({ adId: ADMOB_INTERSTITIAL_ID, isTesting: true }).catch(() => {}); } catch (e) { console.warn('[Jetbreak] AdMob prepareInterstitial failed', e); }
+      try { AdMobPlugin.prepareRewardVideoAd({ adId: ADMOB_REWARDED_ID, isTesting: true }).catch(() => {}); } catch (e) { console.warn('[Jetbreak] AdMob prepareRewardVideoAd failed', e); }
+    }); } catch (e) { return Promise.reject(e); } },
     gameLoadingFinished: () => {},
     gameplayStart: () => {},
     gameplayStop: () => {},
-    commercialBreak: () => AdMobPlugin.showInterstitial()
-      .catch(() => {}) // no fill / not ready — never block the game
-      .finally(() => AdMobPlugin.prepareInterstitial({ adId: ADMOB_INTERSTITIAL_ID, isTesting: true }).catch(() => {})),
-    rewardedBreak: () => AdMobPlugin.showRewardVideoAd()
-      .then(() => true)  // resolved = watched through, per plugin docs check the reward event for exact payout logic
-      .catch(() => false)
-      .finally(() => AdMobPlugin.prepareRewardVideoAd({ adId: ADMOB_REWARDED_ID, isTesting: true }).catch(() => {}))
+    commercialBreak: () => {
+      try {
+        return Promise.resolve(AdMobPlugin.showInterstitial())
+          .catch(() => {}) // no fill / not ready — never block the game
+          .finally(() => { try { AdMobPlugin.prepareInterstitial({ adId: ADMOB_INTERSTITIAL_ID, isTesting: true }).catch(() => {}); } catch (e) {} });
+      } catch (e) { console.warn('[Jetbreak] AdMob showInterstitial failed', e); return Promise.resolve(); }
+    },
+    rewardedBreak: () => {
+      try {
+        return Promise.resolve(AdMobPlugin.showRewardVideoAd())
+          .then(() => true)  // resolved = watched through, per plugin docs check the reward event for exact payout logic
+          .catch(() => false)
+          .finally(() => { try { AdMobPlugin.prepareRewardVideoAd({ adId: ADMOB_REWARDED_ID, isTesting: true }).catch(() => {}); } catch (e) {} });
+      } catch (e) { console.warn('[Jetbreak] AdMob showRewardVideoAd failed', e); return Promise.resolve(false); }
+    }
   } : {
     init: () => Promise.resolve(),
     gameLoadingFinished: () => {},
