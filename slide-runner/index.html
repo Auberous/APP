@@ -1,0 +1,68 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no, viewport-fit=cover" />
+<title>Slide Runner</title>
+<meta name="description" content="Slide Runner — a neon 3D tunnel dodge game. Hold to rise, release to fall. One hit and it's over." />
+<meta name="theme-color" content="#05010f" />
+<link rel="stylesheet" href="style.css" />
+</head>
+<body>
+
+  <canvas id="scene"></canvas>
+
+  <!-- HUD (visible while RUNNING) -->
+  <div id="hud" class="hidden">
+    <div id="score">0</div>
+    <div id="best-inline">BEST <span id="best-inline-value">0</span></div>
+    <div id="powerup-banner" class="hidden"></div>
+  </div>
+
+  <!-- Start screen -->
+  <div id="start-screen" class="overlay">
+    <div class="panel">
+      <h1><span class="glow-cyan">SLIDE</span><span class="glow-magenta">RUNNER</span></h1>
+      <p class="tagline">Hold to rise. Release to fall. One hit ends it.</p>
+      <button id="btn-start" class="btn btn-primary">TAP TO START</button>
+      <div class="best-row">BEST DISTANCE <span id="best-start-value">0</span>m</div>
+      <div class="hint-row">
+        <span class="key">HOLD</span> or <span class="key">↑ / W / SPACE</span> to rise
+      </div>
+    </div>
+  </div>
+
+  <!-- Game over screen -->
+  <div id="gameover-screen" class="overlay hidden">
+    <div class="panel">
+      <h2 class="glow-magenta">RUN OVER</h2>
+      <div class="score-row">
+        <div class="score-block">
+          <div class="score-label">DISTANCE</div>
+          <div id="final-score" class="score-value">0</div>
+        </div>
+        <div class="score-block">
+          <div class="score-label">BEST</div>
+          <div id="best-score" class="score-value">0</div>
+        </div>
+      </div>
+      <div id="new-best-badge" class="new-best hidden">★ NEW BEST ★</div>
+      <button id="btn-restart" class="btn btn-primary">RESTART</button>
+    </div>
+  </div>
+
+  <div id="orientation-warning" class="overlay hidden">
+    <div class="panel"><p>Rotate your device for the best experience — portrait works fine too.</p></div>
+  </div>
+
+  <script type="importmap">
+  {
+    "imports": {
+      "three": "./vendor/three/build/three.module.js",
+      "three/addons/": "./vendor/three/examples/jsm/"
+    }
+  }
+  </script>
+  <script type="module" src="game.js"></script>
+</body>
+</html>
