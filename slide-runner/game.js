@@ -1,16 +1,31 @@
 // ============================================================================
-// SLIDE RUNNER — neon 3D tunnel dodge game
+// SLIDE RUNNER — neon 3D tunnel dodge game (vertical freefall shaft)
 //
 // Coordinate convention:
-//   distanceX  — forward progress (spec's "x"), always increasing.
-//   world Z    — equals -distanceX. Three.js "forward" is -Z, so bigger
-//                distanceX == further into the tunnel == more negative Z.
-//   y          — vertical position, used directly as world Y.
-//   x (lateral)— fixed at 0 for player/tunnel; only used for wall visual width.
+//   player.distance — how far the player has fallen (spec's "x"), always
+//                      increasing. Maps to world Y = -distance, so falling
+//                      further means a more negative world Y (descending).
+//   player.y        — the *lateral* (left/right) position the player
+//                      controls by holding/releasing. Despite the name (kept
+//                      to match the design doc's field, and because it's
+//                      still "the bounded/controlled axis" everywhere in the
+//                      generation/physics/collision code below), it maps to
+//                      world X, not world Y.
+//   world Z         — a small fixed cosmetic depth, used only to give the
+//                      shaft visual thickness and pose the player figure;
+//                      irrelevant to gameplay.
 //
-// The player and camera move forward through a world that is generated once
-// and never re-positioned — this keeps per-frame work cheap. Old geometry
-// well behind the player is despawned and disposed.
+// All the tunnel generation, physics, and collision code below only ever
+// reasons about "distance" (progress) and "y" (the bounded lateral
+// coordinate) in the abstract — it has no idea which world axis either one
+// actually renders to. Only the handful of `.position.set(...)` / rotation
+// calls near the bottom (wall building, hazard/powerup placement, the
+// player, and the camera rig) do that mapping, which is what makes this a
+// vertical shaft instead of the horizontal tunnel this started as.
+//
+// The player and camera move forward (downward) through a world that is
+// generated once and never re-positioned — this keeps per-frame work cheap.
+// Old geometry well above the player is despawned and disposed.
 // ============================================================================
 
 import * as THREE from 'three';
@@ -22,18 +37,18 @@ import { OutputPass } from 'three/addons/postprocessing/OutputPass.js';
 // ---------------------------------------------------------------------------
 // Constants / tuning
 // ---------------------------------------------------------------------------
-const TUNNEL_HALF_WIDTH = 3.2;      // visual lateral width of the tube
+const TUNNEL_HALF_WIDTH = 3.2;      // visual depth (Z) of the shaft — cosmetic only
 const WALL_THICK = 0.22;
-const KEYPOINT_SPACING = 3;         // forward distance between tunnel keypoints
-const LOOKAHEAD = 90;               // keep the world generated this far ahead of the player
-const DESPAWN_BEHIND = 14;          // drop geometry this far behind the player
+const KEYPOINT_SPACING = 3;         // forward (downward) distance between tunnel keypoints
+const LOOKAHEAD = 90;               // keep the world generated this far below the player
+const DESPAWN_BEHIND = 14;          // drop geometry this far above the player
 
 const BASE_SPEED = 9;
 const DIFFICULTY_FACTOR = 0.10;     // currentSpeed = base + elapsed * factor
 const MAX_SPEED = 26;
 
 const PLAYER_RADIUS_BASE = 0.42;
-const PLAYER_VELOCITY_Y = 7.2;      // how fast the player rises/falls while input is held/released
+const PLAYER_VELOCITY_Y = 7.2;      // how fast the player drifts left/right while input is held/released
 
 const MIN_HALF_HEIGHT = 1.05;       // tightest safe channel half-height (must clear player radius)
 const MAX_HALF_HEIGHT = 3.4;
@@ -115,13 +130,73 @@ function powerupMaterial(type) {
   });
 }
 
-// Player sphere
-const playerGeo = new THREE.SphereGeometry(PLAYER_RADIUS_BASE, 24, 18);
-const playerMat = new THREE.MeshStandardMaterial({
-  color: 0xffffff, emissive: 0x33f9ff, emissiveIntensity: 1.1, roughness: 0.15, metalness: 0.3,
+// Player — a small low-poly "freefaller" figure (torso, head, two arms, two
+// legs) built in a skydive arch pose: belly toward the camera above, head
+// leading into the shaft, limbs splayed out to the sides. Animated each
+// frame with an idle limb flutter and a bank/lean when drifting.
+const suitMat = new THREE.MeshStandardMaterial({
+  color: 0x0d1420, emissive: 0x33f9ff, emissiveIntensity: 0.9, roughness: 0.35, metalness: 0.4,
 });
-const playerMesh = new THREE.Mesh(playerGeo, playerMat);
+const visorMat = new THREE.MeshStandardMaterial({
+  color: 0x0a0a12, emissive: 0xffffff, emissiveIntensity: 1.4, roughness: 0.1, metalness: 0.2,
+});
+const limbMat = new THREE.MeshStandardMaterial({
+  color: 0x0d1420, emissive: 0x9b5cff, emissiveIntensity: 0.8, roughness: 0.35, metalness: 0.4,
+});
+
+function buildLimb(radius, length, material) {
+  const geo = new THREE.CapsuleGeometry(radius, length, 4, 8);
+  const mesh = new THREE.Mesh(geo, material);
+  mesh.rotation.x = Math.PI / 2; // capsule's default long axis (Y) -> Z, along the body
+  return mesh;
+}
+
+const playerMesh = new THREE.Group();
+
+const torso = buildLimb(0.17, 0.34, suitMat);
+playerMesh.add(torso);
+
+const head = new THREE.Mesh(new THREE.SphereGeometry(0.155, 16, 12), visorMat);
+head.position.set(0, 0.02, -0.34);
+playerMesh.add(head);
+
+const armL = buildLimb(0.075, 0.42, limbMat);
+armL.position.set(-0.3, 0.02, -0.02);
+armL.rotation.z = 0.95;
+armL.rotation.y = -0.3;
+playerMesh.add(armL);
+
+const armR = buildLimb(0.075, 0.42, limbMat);
+armR.position.set(0.3, 0.02, -0.02);
+armR.rotation.z = -0.95;
+armR.rotation.y = 0.3;
+playerMesh.add(armR);
+
+const legL = buildLimb(0.09, 0.44, limbMat);
+legL.position.set(-0.15, -0.03, 0.34);
+legL.rotation.z = 0.4;
+playerMesh.add(legL);
+
+const legR = buildLimb(0.09, 0.44, limbMat);
+legR.position.set(0.15, -0.03, 0.34);
+legR.rotation.z = -0.4;
+playerMesh.add(legR);
+
 scene.add(playerMesh);
+
+// Idle wind-flutter + drift bank, called every frame from updatePlayer().
+function updatePlayerPose(t) {
+  const bank = THREE.MathUtils.clamp(player.velocityY / PLAYER_VELOCITY_Y, -1, 1);
+  playerMesh.rotation.z = THREE.MathUtils.lerp(playerMesh.rotation.z, -bank * 0.55, 0.12);
+  playerMesh.rotation.y = THREE.MathUtils.lerp(playerMesh.rotation.y, bank * 0.25, 0.12);
+  playerMesh.rotation.x = -0.1 + Math.sin(t * 1.5) * 0.04;
+
+  const flap = Math.sin(t * 9);
+  armL.rotation.x = flap * 0.22;
+  armR.rotation.x = -flap * 0.22;
+  legL.rotation.x = -flap * 0.16;
+  legR.rotation.x = flap * 0.16;
+}
 
 // Trail particles — small additive sprites recycled from a pool.
 const trailTexture = makeGlowTexture();
@@ -232,23 +307,23 @@ bestInlineEl.textContent = Math.floor(best);
 document.getElementById('btn-start').addEventListener('click', startRun);
 document.getElementById('btn-restart').addEventListener('click', startRun);
 
-// Hold-to-rise input: pointer + keyboard, matches the GDD's one-finger control.
+// Hold-to-drift-right input: pointer + keyboard, one-finger control.
 function setHeld(v) { inputHeld = v; }
 canvas.addEventListener('pointerdown', (e) => { setHeld(true); e.preventDefault(); });
 window.addEventListener('pointerup', () => setHeld(false));
 window.addEventListener('pointercancel', () => setHeld(false));
 window.addEventListener('keydown', (e) => {
-  if (['ArrowUp', 'KeyW', 'Space'].includes(e.code)) { setHeld(true); e.preventDefault(); }
+  if (['ArrowRight', 'KeyD', 'Space'].includes(e.code)) { setHeld(true); e.preventDefault(); }
   if (e.code === 'Enter' && state === gameState.READY) startRun();
 });
 window.addEventListener('keyup', (e) => {
-  if (['ArrowUp', 'KeyW', 'Space'].includes(e.code)) setHeld(false);
+  if (['ArrowRight', 'KeyD', 'Space'].includes(e.code)) setHeld(false);
 });
-// Down key explicitly forces descent (per spec Down/S = down) rather than
-// just "not held" — makes keyboard play feel intentional.
-let forceDown = false;
-window.addEventListener('keydown', (e) => { if (['ArrowDown', 'KeyS'].includes(e.code)) forceDown = true; });
-window.addEventListener('keyup', (e) => { if (['ArrowDown', 'KeyS'].includes(e.code)) forceDown = false; });
+// Left key explicitly forces a leftward drift rather than just "not held" —
+// makes keyboard play feel intentional.
+let forceLeft = false;
+window.addEventListener('keydown', (e) => { if (['ArrowLeft', 'KeyA'].includes(e.code)) forceLeft = true; });
+window.addEventListener('keyup', (e) => { if (['ArrowLeft', 'KeyA'].includes(e.code)) forceLeft = false; });
 
 // ---------------------------------------------------------------------------
 // Tunnel generation
@@ -259,25 +334,26 @@ function disposeMesh(mesh) {
   if (mesh.geometry) mesh.geometry.dispose();
 }
 
-// Connects two keypoints with a thin slab mesh (top or bottom wall).
-// Connects two (forward-distance, y) points with a slab. `width`/`height`
-// are the slab's cross-section (lateral x vertical); the slab's length runs
-// along the connecting line, tilted to bridge the two heights.
-function buildWallSegment(x1, y1, x2, y2, width, height, material) {
-  const dz = -(x2 - x1); // world Z delta (forward = -x)
-  const dy = y2 - y1;
-  const len = Math.hypot(dz, dy);
-  const geo = new THREE.BoxGeometry(width, height, Math.max(len, 0.001));
+// Connects two (progress, bounded-y) points with a slab that blocks the
+// bounded (X) axis. `thickness` is the slab's size along X (the blocking
+// dimension); `crossDepth` is its size along Z (purely cosmetic shaft
+// depth). The slab's length runs along Y (progress/fall), tilted to bridge
+// the two Y positions.
+function buildWallSegment(p1, b1, p2, b2, thickness, crossDepth, material) {
+  const dyWorld = -(p2 - p1); // world Y delta (falling = -progress)
+  const dxWorld = b2 - b1;
+  const len = Math.hypot(dyWorld, dxWorld);
+  const geo = new THREE.BoxGeometry(thickness, Math.max(len, 0.001), crossDepth);
   const mesh = new THREE.Mesh(geo, material);
-  mesh.position.set(0, (y1 + y2) / 2, -(x1 + x2) / 2);
-  mesh.rotation.x = Math.atan2(dy, -dz); // tilt to connect the two heights
+  mesh.position.set((b1 + b2) / 2, -(p1 + p2) / 2, 0);
+  mesh.rotation.z = Math.atan2(-dxWorld, dyWorld); // tilt to bridge the two positions
   scene.add(mesh);
   return mesh;
 }
 
-// Side rails are visual only (gameplay bounds are purely vertical) — they
-// run at a fixed height band so the tube still reads as enclosed even while
-// the floor/ceiling wobble through a squeeze or zig-zag.
+// Front/back rails are visual only (gameplay bounds are purely lateral) —
+// they run at a fixed width band so the shaft still reads as enclosed even
+// while the walls wobble through a squeeze or zig-zag.
 const SIDE_RAIL_SPAN = 8;
 
 function addKeypoint(x, centerY, halfHeight, theme) {
@@ -286,13 +362,13 @@ function addKeypoint(x, centerY, halfHeight, theme) {
   keypoints.push(kp);
   if (prev) {
     const mat = theme === 'alt' ? wallMatAlt : wallMat;
-    const top = buildWallSegment(prev.x, prev.centerY + prev.halfHeight, x, centerY + halfHeight, TUNNEL_HALF_WIDTH * 2, WALL_THICK, mat);
-    const bottom = buildWallSegment(prev.x, prev.centerY - prev.halfHeight, x, centerY - halfHeight, TUNNEL_HALF_WIDTH * 2, WALL_THICK, mat);
-    const left = buildWallSegment(prev.x, 0, x, 0, WALL_THICK, SIDE_RAIL_SPAN, sideMat);
-    left.position.x = -TUNNEL_HALF_WIDTH;
-    const right = buildWallSegment(prev.x, 0, x, 0, WALL_THICK, SIDE_RAIL_SPAN, sideMat);
-    right.position.x = TUNNEL_HALF_WIDTH;
-    wallMeshes.push({ mesh: top, x2: x }, { mesh: bottom, x2: x }, { mesh: left, x2: x }, { mesh: right, x2: x });
+    const rightWall = buildWallSegment(prev.x, prev.centerY + prev.halfHeight, x, centerY + halfHeight, WALL_THICK, TUNNEL_HALF_WIDTH * 2, mat);
+    const leftWall = buildWallSegment(prev.x, prev.centerY - prev.halfHeight, x, centerY - halfHeight, WALL_THICK, TUNNEL_HALF_WIDTH * 2, mat);
+    const back = buildWallSegment(prev.x, 0, x, 0, SIDE_RAIL_SPAN, WALL_THICK, sideMat);
+    back.position.z = -TUNNEL_HALF_WIDTH;
+    const front = buildWallSegment(prev.x, 0, x, 0, SIDE_RAIL_SPAN, WALL_THICK, sideMat);
+    front.position.z = TUNNEL_HALF_WIDTH;
+    wallMeshes.push({ mesh: rightWall, x2: x }, { mesh: leftWall, x2: x }, { mesh: back, x2: x }, { mesh: front, x2: x });
   }
   return kp;
 }
@@ -300,16 +376,19 @@ function addKeypoint(x, centerY, halfHeight, theme) {
 function spawnHazard(h) {
   let mesh;
   if (h.type === 'rotating') {
-    const geo = new THREE.BoxGeometry(0.22, h.height, 0.3);
+    // Long axis starts along X (the bounded/blocking axis) so rotating about
+    // Y sweeps it between "blocking" (aligned with X) and "safe" (aligned
+    // with Z, out of the way) as seen by the top-down camera.
+    const geo = new THREE.BoxGeometry(h.height, 0.22, 0.3);
     mesh = new THREE.Mesh(geo, bladeMat);
   } else if (h.type === 'gate') {
     // Visual: two stub plates leaving a gap at holeY — rendered as a single
-    // ring-like torus for the "pulsing ring" look.
+    // ring-like torus for the "pulsing ring" look, hole facing down the shaft.
     const geo = new THREE.TorusGeometry(h.holeRadius + 0.18, 0.14, 10, 24);
     mesh = new THREE.Mesh(geo, gateMat);
-    mesh.rotation.y = Math.PI / 2;
+    mesh.rotation.x = Math.PI / 2;
   } else {
-    const geo = new THREE.BoxGeometry(TUNNEL_HALF_WIDTH * 1.6, h.height, h.width);
+    const geo = new THREE.BoxGeometry(h.height, h.width, TUNNEL_HALF_WIDTH * 1.6);
     mesh = new THREE.Mesh(geo, hazardMat);
   }
   scene.add(mesh);
@@ -589,15 +668,15 @@ function die() {
 // Update — mirrors the GDD pseudocode structure
 // ---------------------------------------------------------------------------
 function handleInput(dt) {
-  const rising = inputHeld && !forceDown;
-  player.velocityY = rising ? PLAYER_VELOCITY_Y : -PLAYER_VELOCITY_Y;
+  const driftingRight = inputHeld && !forceLeft;
+  player.velocityY = driftingRight ? PLAYER_VELOCITY_Y : -PLAYER_VELOCITY_Y;
 }
 
 function isInvincible() {
   return player.activePowerUps.some((p) => p.type === 'boost' || p.type === 'reverse');
 }
 
-function updatePlayer(dt) {
+function updatePlayer(dt, t) {
   player.y += player.velocityY * dt;
   // Soft clamp to a generous absolute range so a boosted phase-through never
   // sends the player wildly off-screen.
@@ -607,13 +686,14 @@ function updatePlayer(dt) {
   const boosting = player.activePowerUps.some((p) => p.type === 'boost');
   let speed = currentSpeed;
   if (boosting) speed *= 1.5;
-  if (reversing) speed = -currentSpeed * 3.2; // brief chaotic backward zoom
+  if (reversing) speed = -currentSpeed * 3.2; // brief chaotic backward zoom (upward zoom, here)
 
   player.distance = Math.max(0, player.distance + speed * dt);
 
-  playerMesh.position.set(0, player.y, -player.distance);
+  playerMesh.position.set(player.y, -player.distance, 0);
   playerMesh.scale.setScalar(player.radius / PLAYER_RADIUS_BASE);
-  playerLight.position.set(0, player.y, -player.distance + 1.5);
+  updatePlayerPose(t);
+  playerLight.position.set(player.y, -player.distance + 1.5, 0);
   playerLight.color.setHex(boosting ? 0xffd23f : reversing ? 0xff2fd0 : 0x66e0ff);
 
   // Trail
@@ -621,7 +701,7 @@ function updatePlayer(dt) {
   const trailColor = boosting ? 0xffd23f : reversing ? 0xff2fd0 : (player.radius < PLAYER_RADIUS_BASE ? 0x33f9ff : 0x66e0ff);
   if (trailAccum > 0.02) {
     trailAccum = 0;
-    emitTrail(0, player.y, -player.distance + 0.2, trailColor);
+    emitTrail(player.y, -player.distance + 0.2, 0, trailColor);
   }
 }
 
@@ -676,19 +756,19 @@ function updateTunnel(dt, t) {
   for (const h of hazards) {
     if (h.type === 'rotating') {
       h.rotation = (h.rotation || h.phase) + h.rotationSpeed * dt;
-      h.mesh.position.set(0, h.y, -h.x);
-      h.mesh.rotation.z = h.rotation;
+      h.mesh.position.set(h.y, -h.x, 0);
+      h.mesh.rotation.y = h.rotation;
     } else if (h.type === 'gate') {
-      h.mesh.position.set(0, h.holeY, -h.x);
+      h.mesh.position.set(h.holeY, -h.x, 0);
       const pulse = 1 + Math.sin(t * 3 + h.phase) * 0.06;
       h.mesh.scale.setScalar(pulse);
     } else {
-      h.mesh.position.set(0, h.y, -h.x);
+      h.mesh.position.set(h.y, -h.x, 0);
     }
   }
   for (const p of powerUps) {
     if (p.collected) continue;
-    p.mesh.position.set(0, p.y + Math.sin(t * 2.5 + p.x) * 0.15, -p.x);
+    p.mesh.position.set(p.y + Math.sin(t * 2.5 + p.x) * 0.15, -p.x, 0);
     p.mesh.rotation.y += dt * 2.2;
     p.mesh.rotation.x += dt * 1.1;
   }
@@ -766,13 +846,16 @@ function updateScoreDisplay(force) {
   }
 }
 
+// Chase cam sits above the falling player (trailing behind on the fall
+// axis) and a little back in Z for a 3/4 view down the shaft, rather than a
+// flat top-down look.
 function updateCamera(dt, t) {
   const boosting = player.activePowerUps.some((p) => p.type === 'boost');
-  const back = boosting ? 5.6 : 5.0;
-  const height = boosting ? 2.0 : 1.7;
-  const targetX = 0;
-  const targetY = player.y + height;
-  const targetZ = -player.distance + back;
+  const above = boosting ? 6.2 : 5.5;
+  const back = boosting ? 2.3 : 1.9;
+  const targetX = player.y;
+  const targetY = -player.distance + above;
+  const targetZ = back;
 
   camera.position.x += (targetX - camera.position.x) * Math.min(1, dt * 8);
   camera.position.y += (targetY - camera.position.y) * Math.min(1, dt * 8);
@@ -782,10 +865,10 @@ function updateCamera(dt, t) {
     shakeTime -= dt;
     const s = shakeStrength * Math.max(0, shakeTime);
     camera.position.x += (Math.random() - 0.5) * s;
-    camera.position.y += (Math.random() - 0.5) * s;
+    camera.position.z += (Math.random() - 0.5) * s;
   }
 
-  camera.lookAt(0, player.y + 0.4, -player.distance - 6);
+  camera.lookAt(player.y, -player.distance - 6, 0);
 }
 
 function updateTrailParticles(dt) {
@@ -806,7 +889,7 @@ function update(dt, t) {
   if (state === gameState.RUNNING) {
     if (startGrace > 0) startGrace -= dt;
     handleInput(dt);
-    updatePlayer(dt);
+    updatePlayer(dt, t);
     updatePowerUps(dt);
     updateTunnel(dt, t);
     checkCollisions();
@@ -828,7 +911,7 @@ function animate() {
 
 // Idle "attract mode" tunnel so the start screen isn't a blank void.
 resetWorld();
-camera.position.set(0, 1.7, 5);
-camera.lookAt(0, 0.4, -6);
+camera.position.set(0, 5.5, 1.9);
+camera.lookAt(0, -6, 0);
 
 animate();

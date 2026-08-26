@@ -1,9 +1,10 @@
 # Slide Runner
 
-A neon 3D tunnel dodge game — hold to rise, release to fall, one hit ends the run.
-Built from the Slide Runner game design doc: procedurally generated tunnel
-segments, auto-activating power-ups (Boost / Shrink / Reverse), a time-based
-difficulty curve, and an addictive instant-retry loop.
+A neon 3D vertical freefall dodge game — hold to drift right, release to
+drift left, one hit ends the run. Built from the Slide Runner game design
+doc: procedurally generated tunnel segments, auto-activating power-ups
+(Boost / Shrink / Reverse), a time-based difficulty curve, and an addictive
+instant-retry loop.
 
 ## Running it
 
@@ -26,21 +27,31 @@ python3 -m http.server 8000
 
 ## Controls
 
-- **Hold** (pointer/touch) or **↑ / W / Space** — rise
-- **Release**, or **↓ / S** — fall
-- Position is continuous: tap rhythmically to hover mid-channel.
+- **Hold** (pointer/touch) or **→ / D / Space** — drift right
+- **Release**, or **← / A** — drift left
+- Position is continuous: tap rhythmically to hover mid-shaft.
 
 ## Design notes / what's implemented
 
-- **Tunnel**: a chain of interpolated keypoints (`centerY`, `halfHeight`) drives
-  a smoothly morphing floor/ceiling, with fixed-band side rails for visual
-  enclosure. Segment generators (`genWideOpen`, `genTightSqueeze`, `genZigZag`,
-  `genMovingWalls`, `genRotatingBlades`, `genPulsingRings`, `genPerfectLane`,
-  `genPowerUpCorridor`) are picked with time-weighted odds matching the GDD's
-  hazard-density curve (wide → squeezes → moving walls → blades → rings).
-- **Hazards**: rotating blades use a true rotation-based vertical danger
-  window (safe when horizontal, deadly when vertical) rather than a fixed
-  box, so dodging them is genuinely timing-based.
+- **Shaft**: a vertical tube, camera trailing above the falling player and
+  looking down it. A chain of interpolated keypoints (`centerY`, `halfHeight`
+  internally — they map to the left/right walls, not a floor/ceiling) drives
+  a smoothly morphing left/right channel, with fixed-band front/back rails
+  for visual enclosure. Segment generators (`genWideOpen`, `genTightSqueeze`,
+  `genZigZag`, `genMovingWalls`, `genRotatingBlades`, `genPulsingRings`,
+  `genPerfectLane`, `genPowerUpCorridor`) are picked with time-weighted odds
+  matching the GDD's hazard-density curve (wide → squeezes → moving walls →
+  blades → rings). All of this generation/physics/collision code is written
+  in terms of abstract "progress" and "bounded lateral position" — only the
+  rendering code at the bottom maps those onto world X/Y/Z, which is what
+  makes this a vertical shaft rather than the horizontal tunnel it started
+  as (see the coordinate-convention comment at the top of `game.js`).
+- **Player**: a small low-poly ragdoll figure (torso, head, two arms, two
+  legs) in a skydive arch pose, animated with an idle wind-flutter on the
+  limbs and a bank/lean of the whole body when drifting — not a static mesh.
+- **Hazards**: rotating blades use a true rotation-based lateral danger
+  window (safe when aligned with the shaft, deadly when aligned across it)
+  rather than a fixed box, so dodging them is genuinely timing-based.
 - **Power-ups**: Boost (1s, invincible + speed + FOV widen), Shrink (3s,
   smaller hitbox), Reverse (0.5s chaotic backward zoom, invincible so the
   "chaos moment" reads as a thrill rather than a cheap death) — both spawned
