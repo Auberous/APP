@@ -55,11 +55,18 @@ python3 -m http.server 8000
   wind-flutter on the limbs, a bank/lean when steering, and a real pose
   change (limbs tuck in) when diving, all blended rather than snapped.
 - **City**: building walls use a procedurally generated lit-window facade
-  texture (two warm/cool tints), with occasional rooftop blocks jutting out
-  for a jagged skyline silhouette, plus a static distant-building field that
-  tracks the player's fall depth so the city always looks endless. Flying
-  cars are a genuine moving hazard (`genFlyingCars`) sweeping laterally
-  across the corridor, not just decoration.
+  texture (three warm/cool/gold tints), with rooftop towers jutting out —
+  built by `buildDetailedBuilding`, which stacks an optional setback tier
+  and caps it with a dome or a spire-plus-beacon-light, echoing the dense,
+  ornamented reference skyline rather than plain boxes — for a jagged
+  silhouette, plus a static distant-building field (same tiered/domed
+  builder) that tracks the player's fall depth so the city always looks
+  endless, and a warm sun-glow sprite fixed in the sky. Flying cars are a
+  genuine moving hazard (`genFlyingCars`), not just decoration, and spawn
+  more densely than most hazard types for a busier, more dynamic corridor.
+  A cinematic vignette + warm horizon tint sits over the render, and the
+  ambient/hemisphere lighting and bloom lean warmer and stronger than a
+  typical neon-only palette to chase the reference's golden dusk haze.
 - **Hazards**: rotating blades use a true rotation-based lateral danger
   window (safe when aligned with the shaft, deadly when aligned across it)
   rather than a fixed box, so dodging them is genuinely timing-based.
@@ -70,6 +77,9 @@ python3 -m http.server 8000
 - **Difficulty**: `currentSpeed = baseSpeed + elapsedTime * difficultyFactor`,
   capped at a max speed (diving multiplies past that cap on purpose — it's
   the skill-based way to outrun the passive curve), exactly per the GDD.
+  Base/max speed and the difficulty ramp all run noticeably faster than the
+  original tuning for a punchier feel; the world-generation lookahead was
+  extended to match so nothing pops in at the higher speed.
 - **Feel**: a brief post-(re)start grace period suppresses death judgment
   (not input) so real-world input latency after tapping "Start" can't kill
   you before you've had a chance to react; a generously wide tutorial

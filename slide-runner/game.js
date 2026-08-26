@@ -40,17 +40,17 @@ import { OutputPass } from 'three/addons/postprocessing/OutputPass.js';
 const TUNNEL_HALF_WIDTH = 3.2;      // visual depth (Z) of the shaft — cosmetic only
 const WALL_THICK = 0.22;
 const KEYPOINT_SPACING = 3;         // forward (downward) distance between tunnel keypoints
-const LOOKAHEAD = 90;               // keep the world generated this far below the player
-const DESPAWN_BEHIND = 14;          // drop geometry this far above the player
+const LOOKAHEAD = 130;              // keep the world generated this far below the player
+const DESPAWN_BEHIND = 18;          // drop geometry this far above the player
 
-const BASE_SPEED = 9;
-const DIFFICULTY_FACTOR = 0.10;     // currentSpeed = base + elapsed * factor
-const MAX_SPEED = 26;
+const BASE_SPEED = 12.5;
+const DIFFICULTY_FACTOR = 0.14;     // currentSpeed = base + elapsed * factor
+const MAX_SPEED = 34;
 
 const PLAYER_RADIUS_BASE = 0.42;
-const PLAYER_VELOCITY_Y = 7.2;      // top lateral drift speed while actively steering
-const DRIFT_ACCEL = 9;              // how fast lateral velocity eases toward its target (steer, or 0 to fall straight)
-const DIVE_SPEED_MULT = 1.7;        // fall-speed multiplier while diving
+const PLAYER_VELOCITY_Y = 8.6;      // top lateral drift speed while actively steering
+const DRIFT_ACCEL = 10;             // how fast lateral velocity eases toward its target (steer, or 0 to fall straight)
+const DIVE_SPEED_MULT = 1.9;        // fall-speed multiplier while diving
 const DIVE_STEER_FACTOR = 0.55;     // steering authority while diving (tucked = harder to correct)
 
 const MIN_HALF_HEIGHT = 1.05;       // tightest safe channel half-height (must clear player radius)
@@ -69,13 +69,13 @@ const canvas = document.getElementById('scene');
 const renderer = new THREE.WebGLRenderer({ canvas, antialias: true, powerPreference: 'high-performance' });
 renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, 2));
 renderer.toneMapping = THREE.ACESFilmicToneMapping;
-renderer.toneMappingExposure = 0.95;
+renderer.toneMappingExposure = 1.08;
 renderer.outputColorSpace = THREE.SRGBColorSpace;
 
 const scene = new THREE.Scene();
-const SKY_COLOR = 0x0a0f22; // dusk haze over the city, doubles as fog color
+const SKY_COLOR = 0x241a30; // dusk haze over the city, doubles as fog color
 scene.background = new THREE.Color(SKY_COLOR);
-scene.fog = new THREE.FogExp2(SKY_COLOR, 0.02);
+scene.fog = new THREE.FogExp2(SKY_COLOR, 0.017);
 
 const BASE_FOV = 72;
 const BOOST_FOV = 88;
@@ -83,7 +83,7 @@ const camera = new THREE.PerspectiveCamera(BASE_FOV, window.innerWidth / window.
 
 const composer = new EffectComposer(renderer);
 composer.addPass(new RenderPass(scene, camera));
-const bloomPass = new UnrealBloomPass(new THREE.Vector2(window.innerWidth, window.innerHeight), 0.55, 0.4, 0.35);
+const bloomPass = new UnrealBloomPass(new THREE.Vector2(window.innerWidth, window.innerHeight), 0.72, 0.45, 0.28);
 composer.addPass(bloomPass);
 composer.addPass(new OutputPass());
 
@@ -99,7 +99,8 @@ onResize();
 
 // Lights — mostly emissive-material driven, but a little ambient + a moving
 // point light keyed to the player keeps things from looking flat.
-scene.add(new THREE.AmbientLight(0x5a6fb0, 0.28));
+scene.add(new THREE.AmbientLight(0xa06848, 0.3));
+scene.add(new THREE.HemisphereLight(0x6a5fb0, 0x1a1024, 0.35));
 const playerLight = new THREE.PointLight(0x66e0ff, 2.2, 12, 2);
 scene.add(playerLight);
 
@@ -147,13 +148,13 @@ function buildingMaterial(seed, tintEmissive) {
 
 const wallMat = buildingMaterial(7823, 0xffffff);
 const wallMatAlt = buildingMaterial(4111, 0xbfe0ff);
+const wallMatWarm = buildingMaterial(9137, 0xffb37a);
 // A fixed tile count (rather than per-segment repeat) keeps window size
 // roughly consistent across the varying wall-segment lengths without
 // needing a texture clone (and matching dispose) per segment.
-wallMat.map.repeat.set(2, 3);
-wallMatAlt.map.repeat.set(2, 3);
+[wallMat, wallMatAlt, wallMatWarm].forEach((m) => m.map.repeat.set(2, 3));
 const skylineMat = new THREE.MeshStandardMaterial({
-  color: 0x141a2c, emissive: 0x2a3a66, emissiveIntensity: 0.5, roughness: 0.6, metalness: 0.3,
+  color: 0x241c30, emissive: 0x6a4a3a, emissiveIntensity: 0.4, roughness: 0.6, metalness: 0.3,
 });
 const hazardMat = new THREE.MeshStandardMaterial({
   color: 0x2a0510, emissive: 0xff2f5f, emissiveIntensity: 0.9, roughness: 0.3, metalness: 0.7,
@@ -513,7 +514,7 @@ function addKeypoint(x, centerY, halfHeight, theme) {
   const prev = keypoints[keypoints.length - 1];
   keypoints.push(kp);
   if (prev) {
-    const mat = theme === 'alt' ? wallMatAlt : wallMat;
+    const mat = Math.random() < 0.28 ? wallMatWarm : (theme === 'alt' ? wallMatAlt : wallMat);
     const rightWall = buildWallSegment(prev.x, prev.centerY + prev.halfHeight, x, centerY + halfHeight, WALL_THICK, TUNNEL_HALF_WIDTH * 2, mat);
     const leftWall = buildWallSegment(prev.x, prev.centerY - prev.halfHeight, x, centerY - halfHeight, WALL_THICK, TUNNEL_HALF_WIDTH * 2, mat);
     const back = buildWallSegment(prev.x, 0, x, 0, SIDE_RAIL_SPAN, WALL_THICK, skylineMat);
@@ -522,24 +523,63 @@ function addKeypoint(x, centerY, halfHeight, theme) {
     front.position.z = TUNNEL_HALF_WIDTH;
     wallMeshes.push({ mesh: rightWall, x2: x }, { mesh: leftWall, x2: x }, { mesh: back, x2: x }, { mesh: front, x2: x });
 
-    // Occasional rooftop block jutting out from one wall — purely decorative
+    // Occasional rooftop tower jutting out from one wall — purely decorative
     // (collision only ever checks the smooth interpolated boundary), but it
-    // breaks up the flat facade into a jagged skyline silhouette.
-    if (Math.random() < 0.4) {
+    // breaks up the flat facade into a jagged, ornamented skyline silhouette.
+    if (Math.random() < 0.5) {
       const side = Math.random() < 0.5 ? -1 : 1;
       const boundaryY = centerY + side * halfHeight;
-      const blockDepth = 1.0 + Math.random() * 2.6;
-      const blockLen = KEYPOINT_SPACING * (0.7 + Math.random() * 0.5);
-      const block = new THREE.Mesh(
-        new THREE.BoxGeometry(blockDepth, blockLen, TUNNEL_HALF_WIDTH * 1.3),
-        Math.random() < 0.5 ? wallMat : wallMatAlt,
-      );
+      const blockDepth = 1.0 + Math.random() * 2.8; // how far it juts out from the wall
+      const blockLen = KEYPOINT_SPACING * (0.7 + Math.random() * 0.5); // extent along the fall axis
+      // buildDetailedBuilding stacks its tiers/cap along local +Y; rotate
+      // that "up" to point outward along world X instead, toward `side`.
+      const blockMats = [wallMat, wallMatAlt, wallMatWarm];
+      const block = buildDetailedBuilding(blockLen, TUNNEL_HALF_WIDTH * 1.3, blockDepth, blockMats[Math.floor(Math.random() * blockMats.length)]);
+      block.rotation.z = side * Math.PI / 2;
       block.position.set(boundaryY + side * blockDepth / 2, -x, 0);
       scene.add(block);
       wallMeshes.push({ mesh: block, x2: x });
     }
   }
   return kp;
+}
+
+// A stepped-tower skyscraper — a base block, an optional setback tier, and
+// an optional dome/spire cap (with a beacon light on spires) — echoing the
+// dense, ornamented skyline of the reference art rather than plain boxes.
+function buildDetailedBuilding(w, d, h, mat) {
+  const group = new THREE.Group();
+  const base = new THREE.Mesh(new THREE.BoxGeometry(w, h, d), mat);
+  group.add(base);
+  let topY = h / 2;
+
+  if (Math.random() < 0.45) {
+    const w2 = w * (0.45 + Math.random() * 0.25);
+    const d2 = d * (0.45 + Math.random() * 0.25);
+    const h2 = h * (0.25 + Math.random() * 0.35);
+    const tier = new THREE.Mesh(new THREE.BoxGeometry(w2, h2, d2), mat);
+    tier.position.y = topY + h2 / 2;
+    group.add(tier);
+    topY += h2;
+  }
+
+  const capRoll = Math.random();
+  if (capRoll < 0.25) {
+    const domeR = Math.min(w, d) * 0.32;
+    const dome = new THREE.Mesh(new THREE.SphereGeometry(domeR, 10, 8, 0, Math.PI * 2, 0, Math.PI / 2), mat);
+    dome.position.y = topY;
+    group.add(dome);
+  } else if (capRoll < 0.5) {
+    const spireH = h * (0.2 + Math.random() * 0.35);
+    const spire = new THREE.Mesh(new THREE.ConeGeometry(Math.min(w, d) * 0.1, spireH, 6), mat);
+    spire.position.y = topY + spireH / 2;
+    group.add(spire);
+    const beacon = new THREE.Mesh(new THREE.SphereGeometry(0.15, 6, 6), Math.random() < 0.5 ? carTaillightMat : carHeadlightMat);
+    beacon.position.y = topY + spireH + 0.15;
+    group.add(beacon);
+  }
+
+  return group;
 }
 
 // A static field of distant, muted buildings that tracks the player's fall
@@ -549,21 +589,31 @@ function buildSkyline() {
   const group = new THREE.Group();
   const clusterZ = [-1, 1];
   for (const zSide of clusterZ) {
-    for (let i = 0; i < 26; i++) {
-      const w = 2 + Math.random() * 3.5;
-      const h = 6 + Math.random() * 26;
-      const x = rand(-30, 30);
-      const z = zSide * (TUNNEL_HALF_WIDTH * 1.8 + Math.random() * 40);
-      const y = rand(-60, 60);
-      const mesh = new THREE.Mesh(new THREE.BoxGeometry(w, h, w), skylineMat);
-      mesh.position.set(x, y, z);
-      group.add(mesh);
+    for (let i = 0; i < 34; i++) {
+      const w = 2 + Math.random() * 4;
+      const d = 2 + Math.random() * 4;
+      const h = 6 + Math.random() * 30;
+      const x = rand(-34, 34);
+      const z = zSide * (TUNNEL_HALF_WIDTH * 1.8 + Math.random() * 46);
+      const y = rand(-70, 70);
+      const building = buildDetailedBuilding(w, d, h, skylineMat);
+      building.position.set(x, y, z);
+      group.add(building);
     }
   }
   scene.add(group);
   return group;
 }
 const skylineGroup = buildSkyline();
+
+// A soft warm glow standing in for a hazy dusk sun, fixed high in the sky.
+const sunSprite = new THREE.Sprite(new THREE.SpriteMaterial({
+  map: makeGlowTexture(), color: 0xffcf9e, transparent: true, opacity: 0.85,
+  depthWrite: false, blending: THREE.AdditiveBlending, fog: false,
+}));
+sunSprite.scale.set(60, 60, 1);
+sunSprite.position.set(-14, 40, -70);
+scene.add(sunSprite);
 
 function spawnHazard(h) {
   let mesh;
@@ -707,15 +757,15 @@ function genPulsingRings(prev, x0) {
 }
 
 function genFlyingCars(prev, x0) {
-  const count = 2 + Math.floor(Math.random() * 3);
+  const count = 3 + Math.floor(Math.random() * 4);
   const hh = 2.8;
   let x = x0;
   addKeypoint(x, prev.centerY, hh);
   const centerY = clampCenter(prev.centerY, hh);
   for (let i = 0; i < count; i++) {
-    x += 4.5 + Math.random() * 2.5;
+    x += 3.2 + Math.random() * 2;
     const amplitude = hh * (0.5 + Math.random() * 0.4);
-    const speed = (Math.random() < 0.5 ? -1 : 1) * (1.3 + Math.random() * 0.9);
+    const speed = (Math.random() < 0.5 ? -1 : 1) * (1.5 + Math.random() * 1.1);
     spawnHazard({
       x, y: centerY, width: 0.4, height: 0.9, type: 'car',
       moveAmplitude: amplitude, moveSpeed: speed,
@@ -752,29 +802,29 @@ function pickGenerator(t) {
 
   if (t < 10) {
     push(genWideOpen, 4);
-    push(genFlyingCars, 1);
+    push(genFlyingCars, 1.6);
   } else if (t < 20) {
     push(genWideOpen, 1.5);
     push(genTightSqueeze, 3);
-    push(genFlyingCars, 1.5);
+    push(genFlyingCars, 2.2);
   } else if (t < 30) {
     push(genWideOpen, 1);
     push(genTightSqueeze, 1.5);
     push(genMovingWalls, 3);
     push(genZigZag, 1.5);
-    push(genFlyingCars, 2);
+    push(genFlyingCars, 2.8);
   } else if (t < 45) {
     push(genTightSqueeze, 1.5);
     push(genMovingWalls, 1.5);
     push(genZigZag, 1.5);
     push(genRotatingBlades, 3);
-    push(genFlyingCars, 2);
+    push(genFlyingCars, 2.8);
   } else {
     push(genMovingWalls, 1.2);
     push(genRotatingBlades, 2.5);
     push(genZigZag, 1.5);
     push(genPulsingRings, 2.5);
-    push(genFlyingCars, 2.5);
+    push(genFlyingCars, 3.2);
   }
 
   const total = table.reduce((s, e) => s + e.w, 0);
@@ -1122,9 +1172,11 @@ function updateCamera(dt, t) {
 
   camera.lookAt(player.y, -player.distance - 6, 0);
 
-  // Keep the distant skyline centered on the player's fall depth so it
-  // reads as an endless city rather than a fixed patch of buildings.
+  // Keep the distant skyline (and the sun glow) centered on the player's
+  // fall depth so they read as an endless city and a fixed sky, rather
+  // than being left behind as the fall goes on forever.
   skylineGroup.position.y = -player.distance;
+  sunSprite.position.y = -player.distance + 40;
 }
 
 function updateTrailParticles(dt) {
