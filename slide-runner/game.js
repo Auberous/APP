@@ -48,7 +48,10 @@ const DIFFICULTY_FACTOR = 0.10;     // currentSpeed = base + elapsed * factor
 const MAX_SPEED = 26;
 
 const PLAYER_RADIUS_BASE = 0.42;
-const PLAYER_VELOCITY_Y = 7.2;      // how fast the player drifts left/right while input is held/released
+const PLAYER_VELOCITY_Y = 7.2;      // top lateral drift speed while actively steering
+const DRIFT_ACCEL = 9;              // how fast lateral velocity eases toward its target (steer, or 0 to fall straight)
+const DIVE_SPEED_MULT = 1.7;        // fall-speed multiplier while diving
+const DIVE_STEER_FACTOR = 0.55;     // steering authority while diving (tucked = harder to correct)
 
 const MIN_HALF_HEIGHT = 1.05;       // tightest safe channel half-height (must clear player radius)
 const MAX_HALF_HEIGHT = 3.4;
@@ -70,8 +73,9 @@ renderer.toneMappingExposure = 0.95;
 renderer.outputColorSpace = THREE.SRGBColorSpace;
 
 const scene = new THREE.Scene();
-scene.background = new THREE.Color(0x05010f);
-scene.fog = new THREE.FogExp2(0x05010f, 0.028);
+const SKY_COLOR = 0x0a0f22; // dusk haze over the city, doubles as fog color
+scene.background = new THREE.Color(SKY_COLOR);
+scene.fog = new THREE.FogExp2(SKY_COLOR, 0.02);
 
 const BASE_FOV = 72;
 const BOOST_FOV = 88;
@@ -95,24 +99,61 @@ onResize();
 
 // Lights — mostly emissive-material driven, but a little ambient + a moving
 // point light keyed to the player keeps things from looking flat.
-scene.add(new THREE.AmbientLight(0x8060ff, 0.22));
+scene.add(new THREE.AmbientLight(0x5a6fb0, 0.28));
 const playerLight = new THREE.PointLight(0x66e0ff, 2.2, 12, 2);
 scene.add(playerLight);
 
 // ---------------------------------------------------------------------------
 // Shared materials
 // ---------------------------------------------------------------------------
-const wallMat = new THREE.MeshStandardMaterial({
-  color: 0x1a1030, emissive: 0x7a2fff, emissiveIntensity: 0.55,
-  roughness: 0.35, metalness: 0.6, side: THREE.DoubleSide,
-});
-const wallMatAlt = new THREE.MeshStandardMaterial({
-  color: 0x0a1830, emissive: 0x33d0ff, emissiveIntensity: 0.55,
-  roughness: 0.35, metalness: 0.6, side: THREE.DoubleSide,
-});
-const sideMat = new THREE.MeshStandardMaterial({
-  color: 0x0c0c16, emissive: 0x4a2fbf, emissiveIntensity: 0.22,
-  roughness: 0.25, metalness: 0.85, side: THREE.DoubleSide,
+
+// Procedural lit-window facade texture for building faces — a dark panel
+// grid with a scatter of randomly-lit windows in warm/cool city-light hues.
+function makeFacadeTexture(seed) {
+  const w = 128, h = 256;
+  const c = document.createElement('canvas');
+  c.width = w; c.height = h;
+  const ctx = c.getContext('2d');
+  ctx.fillStyle = '#0a0c14';
+  ctx.fillRect(0, 0, w, h);
+  const cols = 8, rows = 16;
+  const cw = w / cols, ch = h / rows;
+  let s = seed;
+  const rnd = () => { s = (s * 1103515245 + 12345) & 0x7fffffff; return (s / 0x7fffffff); };
+  for (let r = 0; r < rows; r++) {
+    for (let col = 0; col < cols; col++) {
+      if (rnd() < 0.4) {
+        const warm = rnd() < 0.6;
+        ctx.fillStyle = warm ? `rgba(255,${180 + rnd() * 60 | 0},${90 + rnd() * 60 | 0},${0.7 + rnd() * 0.3})`
+                              : `rgba(${140 + rnd() * 60 | 0},${210 + rnd() * 40 | 0},255,${0.7 + rnd() * 0.3})`;
+        const pad = 1.5;
+        ctx.fillRect(col * cw + pad, r * ch + pad, cw - pad * 2, ch - pad * 2);
+      }
+    }
+  }
+  const tex = new THREE.CanvasTexture(c);
+  tex.wrapS = tex.wrapT = THREE.RepeatWrapping;
+  tex.colorSpace = THREE.SRGBColorSpace;
+  return tex;
+}
+
+function buildingMaterial(seed, tintEmissive) {
+  const tex = makeFacadeTexture(seed);
+  return new THREE.MeshStandardMaterial({
+    color: 0x1a1c26, map: tex, emissiveMap: tex, emissive: tintEmissive,
+    emissiveIntensity: 0.85, roughness: 0.75, metalness: 0.2, side: THREE.DoubleSide,
+  });
+}
+
+const wallMat = buildingMaterial(7823, 0xffffff);
+const wallMatAlt = buildingMaterial(4111, 0xbfe0ff);
+// A fixed tile count (rather than per-segment repeat) keeps window size
+// roughly consistent across the varying wall-segment lengths without
+// needing a texture clone (and matching dispose) per segment.
+wallMat.map.repeat.set(2, 3);
+wallMatAlt.map.repeat.set(2, 3);
+const skylineMat = new THREE.MeshStandardMaterial({
+  color: 0x141a2c, emissive: 0x2a3a66, emissiveIntensity: 0.5, roughness: 0.6, metalness: 0.3,
 });
 const hazardMat = new THREE.MeshStandardMaterial({
   color: 0x2a0510, emissive: 0xff2f5f, emissiveIntensity: 0.9, roughness: 0.3, metalness: 0.7,
@@ -123,6 +164,15 @@ const bladeMat = new THREE.MeshStandardMaterial({
 const gateMat = new THREE.MeshStandardMaterial({
   color: 0x1a0025, emissive: 0xff2fd0, emissiveIntensity: 0.8, roughness: 0.3, metalness: 0.6, side: THREE.DoubleSide,
 });
+const carBodyMat = new THREE.MeshStandardMaterial({
+  color: 0x14161e, emissive: 0xff2f5f, emissiveIntensity: 0.9, roughness: 0.3, metalness: 0.7,
+});
+const carHeadlightMat = new THREE.MeshStandardMaterial({
+  color: 0xffffff, emissive: 0xbfe8ff, emissiveIntensity: 2.2, roughness: 0.2, metalness: 0.2,
+});
+const carTaillightMat = new THREE.MeshStandardMaterial({
+  color: 0xff3050, emissive: 0xff3050, emissiveIntensity: 2.2, roughness: 0.2, metalness: 0.2,
+});
 
 function powerupMaterial(type) {
   return new THREE.MeshStandardMaterial({
@@ -130,72 +180,144 @@ function powerupMaterial(type) {
   });
 }
 
-// Player — a small low-poly "freefaller" figure (torso, head, two arms, two
-// legs) built in a skydive arch pose: belly toward the camera above, head
-// leading into the shaft, limbs splayed out to the sides. Animated each
-// frame with an idle limb flutter and a bank/lean when drifting.
+// Player — a small low-poly "freefaller" figure, jointed at the shoulders,
+// elbows, hips and knees so it animates like a real diver: a skydive arch
+// (limbs bent and splayed, per the reference pose) by default, tucking into
+// a streamlined dive on command. Belly faces the camera above (+Y); head
+// leads into the shaft (-Z); the rig/backpack sits on the back (-Y).
 const suitMat = new THREE.MeshStandardMaterial({
-  color: 0x0d1420, emissive: 0x33f9ff, emissiveIntensity: 0.9, roughness: 0.35, metalness: 0.4,
-});
-const visorMat = new THREE.MeshStandardMaterial({
-  color: 0x0a0a12, emissive: 0xffffff, emissiveIntensity: 1.4, roughness: 0.1, metalness: 0.2,
+  color: 0x11151c, emissive: 0x1c2740, emissiveIntensity: 0.4, roughness: 0.55, metalness: 0.25,
 });
 const limbMat = new THREE.MeshStandardMaterial({
-  color: 0x0d1420, emissive: 0x9b5cff, emissiveIntensity: 0.8, roughness: 0.35, metalness: 0.4,
+  color: 0x11151c, emissive: 0x6a3fd0, emissiveIntensity: 0.55, roughness: 0.55, metalness: 0.25,
+});
+const jointMat = new THREE.MeshStandardMaterial({
+  color: 0x0a0c12, emissive: 0xff2fd0, emissiveIntensity: 1.0, roughness: 0.3, metalness: 0.6,
+});
+const pipingMat = new THREE.MeshStandardMaterial({
+  color: 0x0a0c12, emissive: 0x33f9ff, emissiveIntensity: 1.3, roughness: 0.25, metalness: 0.4,
+});
+const helmetMat = new THREE.MeshStandardMaterial({
+  color: 0x14141c, emissive: 0x33f9ff, emissiveIntensity: 0.35, roughness: 0.4, metalness: 0.55,
+});
+const visorMat = new THREE.MeshStandardMaterial({
+  color: 0x05070c, emissive: 0x9be8ff, emissiveIntensity: 1.7, roughness: 0.1, metalness: 0.2,
+});
+const rigMat = new THREE.MeshStandardMaterial({
+  color: 0x191a22, emissive: 0xffb020, emissiveIntensity: 0.6, roughness: 0.4, metalness: 0.6,
 });
 
-function buildLimb(radius, length, material) {
-  const geo = new THREE.CapsuleGeometry(radius, length, 4, 8);
-  const mesh = new THREE.Mesh(geo, material);
-  mesh.rotation.x = Math.PI / 2; // capsule's default long axis (Y) -> Z, along the body
-  return mesh;
+function makeCapsule(radius, length, material) {
+  return new THREE.Mesh(new THREE.CapsuleGeometry(radius, length, 4, 8), material);
+}
+
+// A 2-segment jointed limb (shoulder->elbow->hand, or hip->knee->foot).
+// `root` gets positioned at the attach point on the torso and its rotation
+// swings the whole limb; `joint` sits at the end of the upper segment and
+// its rotation bends the lower segment (elbow/knee), independent of root.
+function buildJointedLimb(upperLen, upperR, lowerLen, lowerR, tipR, material) {
+  const root = new THREE.Group();
+  const upper = makeCapsule(upperR, upperLen, material);
+  upper.position.y = -upperLen / 2;
+  root.add(upper);
+
+  const elbow = new THREE.Mesh(new THREE.SphereGeometry(upperR * 1.05, 8, 6), jointMat);
+  elbow.position.y = -upperLen;
+  root.add(elbow);
+
+  const joint = new THREE.Group();
+  joint.position.y = -upperLen;
+  root.add(joint);
+
+  const lower = makeCapsule(lowerR, lowerLen, material);
+  lower.position.y = -lowerLen / 2;
+  joint.add(lower);
+
+  const tip = new THREE.Mesh(new THREE.SphereGeometry(tipR, 8, 6), jointMat);
+  tip.position.y = -lowerLen;
+  joint.add(tip);
+
+  return { root, joint };
 }
 
 const playerMesh = new THREE.Group();
 
-const torso = buildLimb(0.17, 0.34, suitMat);
+const torso = makeCapsule(0.17, 0.36, suitMat);
+torso.rotation.x = Math.PI / 2; // long axis along Z, head-to-hip
 playerMesh.add(torso);
 
-const head = new THREE.Mesh(new THREE.SphereGeometry(0.155, 16, 12), visorMat);
-head.position.set(0, 0.02, -0.34);
+// Backpack rig, mounted on the back (away from camera).
+const rig = new THREE.Mesh(new THREE.BoxGeometry(0.24, 0.13, 0.3), rigMat);
+rig.position.set(0, -0.13, 0.02);
+playerMesh.add(rig);
+[-1, 1].forEach((side) => {
+  const pod = new THREE.Mesh(new THREE.CylinderGeometry(0.035, 0.035, 0.22, 6), pipingMat);
+  pod.rotation.x = Math.PI / 2;
+  pod.position.set(side * 0.13, -0.14, 0.04);
+  playerMesh.add(pod);
+});
+
+const head = new THREE.Mesh(new THREE.SphereGeometry(0.155, 16, 12), helmetMat);
+head.position.set(0, 0.04, -0.36);
 playerMesh.add(head);
+const visor = new THREE.Mesh(new THREE.SphereGeometry(0.1, 12, 10), visorMat);
+visor.position.set(0, -0.01, -0.11);
+head.add(visor);
+const camMount = new THREE.Mesh(new THREE.BoxGeometry(0.06, 0.05, 0.08), rigMat);
+camMount.position.set(0, 0.06, -0.15);
+head.add(camMount);
 
-const armL = buildLimb(0.075, 0.42, limbMat);
-armL.position.set(-0.3, 0.02, -0.02);
-armL.rotation.z = 0.95;
-armL.rotation.y = -0.3;
-playerMesh.add(armL);
-
-const armR = buildLimb(0.075, 0.42, limbMat);
-armR.position.set(0.3, 0.02, -0.02);
-armR.rotation.z = -0.95;
-armR.rotation.y = 0.3;
-playerMesh.add(armR);
-
-const legL = buildLimb(0.09, 0.44, limbMat);
-legL.position.set(-0.15, -0.03, 0.34);
-legL.rotation.z = 0.4;
-playerMesh.add(legL);
-
-const legR = buildLimb(0.09, 0.44, limbMat);
-legR.position.set(0.15, -0.03, 0.34);
-legR.rotation.z = -0.4;
-playerMesh.add(legR);
+// Limbs — built pointing straight "down" (local -Y) at rest, then swung and
+// bent into the arch pose entirely via root/joint rotation, so the same
+// rest geometry also serves the tucked dive pose (see updatePlayerPose).
+const armL = buildJointedLimb(0.21, 0.075, 0.22, 0.065, 0.06, limbMat);
+const armR = buildJointedLimb(0.21, 0.075, 0.22, 0.065, 0.06, limbMat);
+const legL = buildJointedLimb(0.26, 0.1, 0.28, 0.085, 0.075, limbMat);
+const legR = buildJointedLimb(0.26, 0.1, 0.28, 0.085, 0.075, limbMat);
+armL.root.position.set(-0.27, 0.09, -0.14);
+armR.root.position.set(0.27, 0.09, -0.14);
+legL.root.position.set(-0.14, -0.03, 0.22);
+legR.root.position.set(0.14, -0.03, 0.22);
+[armL, armR, legL, legR].forEach((limb) => playerMesh.add(limb.root));
 
 scene.add(playerMesh);
 
-// Idle wind-flutter + drift bank, called every frame from updatePlayer().
-function updatePlayerPose(t) {
-  const bank = THREE.MathUtils.clamp(player.velocityY / PLAYER_VELOCITY_Y, -1, 1);
-  playerMesh.rotation.z = THREE.MathUtils.lerp(playerMesh.rotation.z, -bank * 0.55, 0.12);
-  playerMesh.rotation.y = THREE.MathUtils.lerp(playerMesh.rotation.y, bank * 0.25, 0.12);
-  playerMesh.rotation.x = -0.1 + Math.sin(t * 1.5) * 0.04;
+// Rest-pose angles, as a function of side (-1 left, +1 right) so L/R share
+// one formula. "Arch" is the default stable skydive spread; "tuck" is the
+// streamlined dive pose limbs blend toward while diving.
+function armPose(side, tuck) {
+  return {
+    root: { x: 0, y: side * lerp(-0.5, -0.1, tuck), z: side * lerp(1.3, 0.25, tuck) },
+    joint: { x: lerp(-1.15, -0.25, tuck), y: 0, z: 0 },
+  };
+}
+function legPose(side, tuck) {
+  return {
+    root: { x: 0, y: side * lerp(0.35, 0.05, tuck), z: side * lerp(0.55, 0.06, tuck) },
+    joint: { x: lerp(1.2, 0.15, tuck), y: 0, z: 0 },
+  };
+}
 
-  const flap = Math.sin(t * 9);
-  armL.rotation.x = flap * 0.22;
-  armR.rotation.x = -flap * 0.22;
-  legL.rotation.x = -flap * 0.16;
-  legR.rotation.x = flap * 0.16;
+function applyPose(limb, pose, flutter) {
+  limb.root.rotation.set(pose.root.x + flutter * 0.5, pose.root.y, pose.root.z);
+  limb.joint.rotation.set(pose.joint.x + flutter, pose.joint.y, pose.joint.z);
+}
+
+// Idle wind-flutter, drift bank, and dive tuck — called every frame from
+// updatePlayer(). `diveBlend` eases 0 (arch) -> 1 (tuck) rather than
+// snapping, so the transition into/out of a dive reads as a real pose change.
+function updatePlayerPose(t, diveBlend) {
+  const bank = THREE.MathUtils.clamp(player.velocityY / PLAYER_VELOCITY_Y, -1, 1);
+  playerMesh.rotation.z = THREE.MathUtils.lerp(playerMesh.rotation.z, -bank * 0.5, 0.12);
+  playerMesh.rotation.y = THREE.MathUtils.lerp(playerMesh.rotation.y, bank * 0.22, 0.12);
+  playerMesh.rotation.x = THREE.MathUtils.lerp(-0.08, -0.35, diveBlend) + Math.sin(t * 1.4) * 0.03 * (1 - diveBlend);
+
+  const flapArm = Math.sin(t * 8.5) * 0.14 * (1 - diveBlend * 0.7);
+  const flapLeg = Math.sin(t * 8.5 + Math.PI) * 0.1 * (1 - diveBlend * 0.7);
+  applyPose(armL, armPose(-1, diveBlend), flapArm);
+  applyPose(armR, armPose(1, diveBlend), -flapArm);
+  applyPose(legL, legPose(-1, diveBlend), flapLeg);
+  applyPose(legR, legPose(1, diveBlend), -flapLeg);
 }
 
 // Trail particles — small additive sprites recycled from a pool.
@@ -284,13 +406,21 @@ let shakeStrength = 0;
 const START_GRACE = 0.4;
 let startGrace = 0;
 
-// Input
-let inputHeld = false;
+// Input: steer left/right (eases toward straight when released — see
+// handleInput) plus an independent dive hold for a faster, harder-to-steer
+// tucked descent. `dir` combines keyboard + pointer sources, clamped to
+// [-1, 1]; `diving` combines its own sources the same way.
+let keyLeftHeld = false, keyRightHeld = false, keyDiveHeld = false;
+let pointerDir = 0, steerPointerId = null;
+let pointerDive = false, divePointerId = null;
+let diving = false;
+let diveBlend = 0; // eased 0 (arch pose) -> 1 (tuck), see updatePlayer
 
 // ---------------------------------------------------------------------------
 // DOM references
 // ---------------------------------------------------------------------------
 const hud = document.getElementById('hud');
+const controls = document.getElementById('controls');
 const scoreEl = document.getElementById('score');
 const bestInlineEl = document.getElementById('best-inline-value');
 const powerupBanner = document.getElementById('powerup-banner');
@@ -306,24 +436,46 @@ bestInlineEl.textContent = Math.floor(best);
 
 document.getElementById('btn-start').addEventListener('click', startRun);
 document.getElementById('btn-restart').addEventListener('click', startRun);
+const diveBtn = document.getElementById('btn-dive');
 
-// Hold-to-drift-right input: pointer + keyboard, one-finger control.
-function setHeld(v) { inputHeld = v; }
-canvas.addEventListener('pointerdown', (e) => { setHeld(true); e.preventDefault(); });
-window.addEventListener('pointerup', () => setHeld(false));
-window.addEventListener('pointercancel', () => setHeld(false));
+// Steering: touch/click the left or right half of the screen (tracked by
+// pointerId so a second finger on the dive button doesn't cancel it), or
+// keyboard arrows/AD.
+function steerDirFromEvent(e) { return e.clientX < window.innerWidth / 2 ? -1 : 1; }
+canvas.addEventListener('pointerdown', (e) => {
+  steerPointerId = e.pointerId;
+  pointerDir = steerDirFromEvent(e);
+  e.preventDefault();
+});
+window.addEventListener('pointermove', (e) => { if (e.pointerId === steerPointerId) pointerDir = steerDirFromEvent(e); });
+window.addEventListener('pointerup', (e) => { if (e.pointerId === steerPointerId) { pointerDir = 0; steerPointerId = null; } });
+window.addEventListener('pointercancel', (e) => { if (e.pointerId === steerPointerId) { pointerDir = 0; steerPointerId = null; } });
+
+// Dive: a dedicated button (own DOM element, so it never fights the canvas
+// steering zones underneath it) plus a keyboard hold.
+diveBtn.addEventListener('pointerdown', (e) => {
+  divePointerId = e.pointerId;
+  pointerDive = true;
+  e.preventDefault();
+  e.stopPropagation();
+});
+window.addEventListener('pointerup', (e) => { if (e.pointerId === divePointerId) { pointerDive = false; divePointerId = null; } });
+window.addEventListener('pointercancel', (e) => { if (e.pointerId === divePointerId) { pointerDive = false; divePointerId = null; } });
+
+const LEFT_KEYS = new Set(['ArrowLeft', 'KeyA']);
+const RIGHT_KEYS = new Set(['ArrowRight', 'KeyD']);
+const DIVE_KEYS = new Set(['Space', 'ShiftLeft', 'ShiftRight', 'ArrowDown', 'KeyS']);
 window.addEventListener('keydown', (e) => {
-  if (['ArrowRight', 'KeyD', 'Space'].includes(e.code)) { setHeld(true); e.preventDefault(); }
+  if (LEFT_KEYS.has(e.code)) { keyLeftHeld = true; e.preventDefault(); }
+  if (RIGHT_KEYS.has(e.code)) { keyRightHeld = true; e.preventDefault(); }
+  if (DIVE_KEYS.has(e.code)) { keyDiveHeld = true; e.preventDefault(); }
   if (e.code === 'Enter' && state === gameState.READY) startRun();
 });
 window.addEventListener('keyup', (e) => {
-  if (['ArrowRight', 'KeyD', 'Space'].includes(e.code)) setHeld(false);
+  if (LEFT_KEYS.has(e.code)) keyLeftHeld = false;
+  if (RIGHT_KEYS.has(e.code)) keyRightHeld = false;
+  if (DIVE_KEYS.has(e.code)) keyDiveHeld = false;
 });
-// Left key explicitly forces a leftward drift rather than just "not held" —
-// makes keyboard play feel intentional.
-let forceLeft = false;
-window.addEventListener('keydown', (e) => { if (['ArrowLeft', 'KeyA'].includes(e.code)) forceLeft = true; });
-window.addEventListener('keyup', (e) => { if (['ArrowLeft', 'KeyA'].includes(e.code)) forceLeft = false; });
 
 // ---------------------------------------------------------------------------
 // Tunnel generation
@@ -331,7 +483,7 @@ window.addEventListener('keyup', (e) => { if (['ArrowLeft', 'KeyA'].includes(e.c
 
 function disposeMesh(mesh) {
   scene.remove(mesh);
-  if (mesh.geometry) mesh.geometry.dispose();
+  mesh.traverse((obj) => { if (obj.geometry) obj.geometry.dispose(); });
 }
 
 // Connects two (progress, bounded-y) points with a slab that blocks the
@@ -364,14 +516,54 @@ function addKeypoint(x, centerY, halfHeight, theme) {
     const mat = theme === 'alt' ? wallMatAlt : wallMat;
     const rightWall = buildWallSegment(prev.x, prev.centerY + prev.halfHeight, x, centerY + halfHeight, WALL_THICK, TUNNEL_HALF_WIDTH * 2, mat);
     const leftWall = buildWallSegment(prev.x, prev.centerY - prev.halfHeight, x, centerY - halfHeight, WALL_THICK, TUNNEL_HALF_WIDTH * 2, mat);
-    const back = buildWallSegment(prev.x, 0, x, 0, SIDE_RAIL_SPAN, WALL_THICK, sideMat);
+    const back = buildWallSegment(prev.x, 0, x, 0, SIDE_RAIL_SPAN, WALL_THICK, skylineMat);
     back.position.z = -TUNNEL_HALF_WIDTH;
-    const front = buildWallSegment(prev.x, 0, x, 0, SIDE_RAIL_SPAN, WALL_THICK, sideMat);
+    const front = buildWallSegment(prev.x, 0, x, 0, SIDE_RAIL_SPAN, WALL_THICK, skylineMat);
     front.position.z = TUNNEL_HALF_WIDTH;
     wallMeshes.push({ mesh: rightWall, x2: x }, { mesh: leftWall, x2: x }, { mesh: back, x2: x }, { mesh: front, x2: x });
+
+    // Occasional rooftop block jutting out from one wall — purely decorative
+    // (collision only ever checks the smooth interpolated boundary), but it
+    // breaks up the flat facade into a jagged skyline silhouette.
+    if (Math.random() < 0.4) {
+      const side = Math.random() < 0.5 ? -1 : 1;
+      const boundaryY = centerY + side * halfHeight;
+      const blockDepth = 1.0 + Math.random() * 2.6;
+      const blockLen = KEYPOINT_SPACING * (0.7 + Math.random() * 0.5);
+      const block = new THREE.Mesh(
+        new THREE.BoxGeometry(blockDepth, blockLen, TUNNEL_HALF_WIDTH * 1.3),
+        Math.random() < 0.5 ? wallMat : wallMatAlt,
+      );
+      block.position.set(boundaryY + side * blockDepth / 2, -x, 0);
+      scene.add(block);
+      wallMeshes.push({ mesh: block, x2: x });
+    }
   }
   return kp;
 }
+
+// A static field of distant, muted buildings that tracks the player's fall
+// so it always surrounds the shaft — an infinite-looking city vista without
+// regenerating geometry. Built once at startup.
+function buildSkyline() {
+  const group = new THREE.Group();
+  const clusterZ = [-1, 1];
+  for (const zSide of clusterZ) {
+    for (let i = 0; i < 26; i++) {
+      const w = 2 + Math.random() * 3.5;
+      const h = 6 + Math.random() * 26;
+      const x = rand(-30, 30);
+      const z = zSide * (TUNNEL_HALF_WIDTH * 1.8 + Math.random() * 40);
+      const y = rand(-60, 60);
+      const mesh = new THREE.Mesh(new THREE.BoxGeometry(w, h, w), skylineMat);
+      mesh.position.set(x, y, z);
+      group.add(mesh);
+    }
+  }
+  scene.add(group);
+  return group;
+}
+const skylineGroup = buildSkyline();
 
 function spawnHazard(h) {
   let mesh;
@@ -387,6 +579,21 @@ function spawnHazard(h) {
     const geo = new THREE.TorusGeometry(h.holeRadius + 0.18, 0.14, 10, 24);
     mesh = new THREE.Mesh(geo, gateMat);
     mesh.rotation.x = Math.PI / 2;
+  } else if (h.type === 'car') {
+    // A small flying car sweeping laterally across the shaft: a wedge body
+    // plus a headlight and a taillight so its direction of travel reads.
+    mesh = new THREE.Group();
+    const body = new THREE.Mesh(new THREE.BoxGeometry(h.height, 0.22, h.width), carBodyMat);
+    mesh.add(body);
+    const cabin = new THREE.Mesh(new THREE.BoxGeometry(h.height * 0.5, 0.16, h.width * 0.55), carBodyMat);
+    cabin.position.y = 0.16;
+    mesh.add(cabin);
+    const headlight = new THREE.Mesh(new THREE.SphereGeometry(0.07, 8, 6), carHeadlightMat);
+    headlight.position.set(h.moveSpeed >= 0 ? h.height / 2 - 0.05 : -h.height / 2 + 0.05, 0, 0);
+    mesh.add(headlight);
+    const taillight = new THREE.Mesh(new THREE.SphereGeometry(0.06, 8, 6), carTaillightMat);
+    taillight.position.set(h.moveSpeed >= 0 ? -h.height / 2 + 0.05 : h.height / 2 - 0.05, 0, 0);
+    mesh.add(taillight);
   } else {
     const geo = new THREE.BoxGeometry(h.height, h.width, TUNNEL_HALF_WIDTH * 1.6);
     mesh = new THREE.Mesh(geo, hazardMat);
@@ -499,6 +706,25 @@ function genPulsingRings(prev, x0) {
   return x + 4;
 }
 
+function genFlyingCars(prev, x0) {
+  const count = 2 + Math.floor(Math.random() * 3);
+  const hh = 2.8;
+  let x = x0;
+  addKeypoint(x, prev.centerY, hh);
+  const centerY = clampCenter(prev.centerY, hh);
+  for (let i = 0; i < count; i++) {
+    x += 4.5 + Math.random() * 2.5;
+    const amplitude = hh * (0.5 + Math.random() * 0.4);
+    const speed = (Math.random() < 0.5 ? -1 : 1) * (1.3 + Math.random() * 0.9);
+    spawnHazard({
+      x, y: centerY, width: 0.4, height: 0.9, type: 'car',
+      moveAmplitude: amplitude, moveSpeed: speed,
+    });
+  }
+  addKeypoint(x + 4, centerY, hh);
+  return x + 4;
+}
+
 function genPowerUpCorridor(prev, x0) {
   const span = 9 + Math.random() * 3;
   const hh = Math.max(prev.halfHeight, 2.4);
@@ -526,24 +752,29 @@ function pickGenerator(t) {
 
   if (t < 10) {
     push(genWideOpen, 4);
+    push(genFlyingCars, 1);
   } else if (t < 20) {
     push(genWideOpen, 1.5);
     push(genTightSqueeze, 3);
+    push(genFlyingCars, 1.5);
   } else if (t < 30) {
     push(genWideOpen, 1);
     push(genTightSqueeze, 1.5);
     push(genMovingWalls, 3);
     push(genZigZag, 1.5);
+    push(genFlyingCars, 2);
   } else if (t < 45) {
     push(genTightSqueeze, 1.5);
     push(genMovingWalls, 1.5);
     push(genZigZag, 1.5);
     push(genRotatingBlades, 3);
+    push(genFlyingCars, 2);
   } else {
     push(genMovingWalls, 1.2);
     push(genRotatingBlades, 2.5);
     push(genZigZag, 1.5);
     push(genPulsingRings, 2.5);
+    push(genFlyingCars, 2.5);
   }
 
   const total = table.reduce((s, e) => s + e.w, 0);
@@ -635,6 +866,7 @@ function startRun() {
   resetWorld();
   state = gameState.RUNNING;
   hud.classList.remove('hidden');
+  controls.classList.remove('hidden');
   startScreen.classList.add('hidden');
   gameoverScreen.classList.add('hidden');
   updateScoreDisplay(true);
@@ -659,6 +891,7 @@ function die() {
   bestInlineEl.textContent = Math.floor(best);
 
   hud.classList.add('hidden');
+  controls.classList.add('hidden');
   gameoverScreen.classList.remove('hidden');
 
   triggerShake(0.5, 0.35);
@@ -668,8 +901,16 @@ function die() {
 // Update — mirrors the GDD pseudocode structure
 // ---------------------------------------------------------------------------
 function handleInput(dt) {
-  const driftingRight = inputHeld && !forceLeft;
-  player.velocityY = driftingRight ? PLAYER_VELOCITY_Y : -PLAYER_VELOCITY_Y;
+  diving = pointerDive || keyDiveHeld;
+
+  const keyDir = (keyRightHeld ? 1 : 0) - (keyLeftHeld ? 1 : 0);
+  const dir = THREE.MathUtils.clamp(pointerDir + keyDir, -1, 1);
+  const targetVel = dir * PLAYER_VELOCITY_Y * (diving ? DIVE_STEER_FACTOR : 1);
+  // Ease toward the target rather than snapping, so letting go settles back
+  // to falling straight instead of instantly zeroing out.
+  player.velocityY += (targetVel - player.velocityY) * Math.min(1, dt * DRIFT_ACCEL);
+
+  diveBlend += ((diving ? 1 : 0) - diveBlend) * Math.min(1, dt * 6);
 }
 
 function isInvincible() {
@@ -686,20 +927,21 @@ function updatePlayer(dt, t) {
   const boosting = player.activePowerUps.some((p) => p.type === 'boost');
   let speed = currentSpeed;
   if (boosting) speed *= 1.5;
+  if (diving) speed *= DIVE_SPEED_MULT;
   if (reversing) speed = -currentSpeed * 3.2; // brief chaotic backward zoom (upward zoom, here)
 
   player.distance = Math.max(0, player.distance + speed * dt);
 
   playerMesh.position.set(player.y, -player.distance, 0);
   playerMesh.scale.setScalar(player.radius / PLAYER_RADIUS_BASE);
-  updatePlayerPose(t);
+  updatePlayerPose(t, diveBlend);
   playerLight.position.set(player.y, -player.distance + 1.5, 0);
-  playerLight.color.setHex(boosting ? 0xffd23f : reversing ? 0xff2fd0 : 0x66e0ff);
+  playerLight.color.setHex(boosting ? 0xffd23f : reversing ? 0xff2fd0 : diving ? 0xff5a3c : 0x66e0ff);
 
   // Trail
   trailAccum += dt;
-  const trailColor = boosting ? 0xffd23f : reversing ? 0xff2fd0 : (player.radius < PLAYER_RADIUS_BASE ? 0x33f9ff : 0x66e0ff);
-  if (trailAccum > 0.02) {
+  const trailColor = boosting ? 0xffd23f : reversing ? 0xff2fd0 : diving ? 0xff5a3c : (player.radius < PLAYER_RADIUS_BASE ? 0x33f9ff : 0x66e0ff);
+  if (trailAccum > (diving ? 0.012 : 0.02)) {
     trailAccum = 0;
     emitTrail(player.y, -player.distance + 0.2, 0, trailColor);
   }
@@ -752,6 +994,12 @@ function collectPowerUp(p) {
   triggerShake(0.15, 0.12);
 }
 
+// A car sweeps back and forth across its patrol band: `h.y` is the band
+// center, `h.moveAmplitude` its half-width, `h.moveSpeed` how fast.
+function hazardCurrentY(h, t) {
+  return h.type === 'car' ? h.y + Math.sin(t * h.moveSpeed + h.phase) * h.moveAmplitude : h.y;
+}
+
 function updateTunnel(dt, t) {
   for (const h of hazards) {
     if (h.type === 'rotating') {
@@ -762,6 +1010,10 @@ function updateTunnel(dt, t) {
       h.mesh.position.set(h.holeY, -h.x, 0);
       const pulse = 1 + Math.sin(t * 3 + h.phase) * 0.06;
       h.mesh.scale.setScalar(pulse);
+    } else if (h.type === 'car') {
+      const y = hazardCurrentY(h, t);
+      h.mesh.position.set(y, -h.x, 0);
+      h.mesh.rotation.z = Math.cos(t * h.moveSpeed + h.phase) * h.moveSpeed * h.moveAmplitude * 0.05;
     } else {
       h.mesh.position.set(h.y, -h.x, 0);
     }
@@ -774,7 +1026,7 @@ function updateTunnel(dt, t) {
   }
 }
 
-function checkCollisions() {
+function checkCollisions(t) {
   if (startGrace > 0) return;
   const invincible = isInvincible();
 
@@ -806,7 +1058,7 @@ function checkCollisions() {
       }
     } else {
       const dx = Math.abs(h.x - player.distance);
-      const dy = Math.abs(player.y - h.y);
+      const dy = Math.abs(player.y - hazardCurrentY(h, t));
       if (dx < h.width / 2 + player.radius && dy < h.height / 2 + player.radius) {
         if (!invincible) { die(); return; }
       } else if (dx < h.width / 2 + player.radius + 0.7 && dy < h.height / 2 + player.radius + 0.7) {
@@ -869,6 +1121,10 @@ function updateCamera(dt, t) {
   }
 
   camera.lookAt(player.y, -player.distance - 6, 0);
+
+  // Keep the distant skyline centered on the player's fall depth so it
+  // reads as an endless city rather than a fixed patch of buildings.
+  skylineGroup.position.y = -player.distance;
 }
 
 function updateTrailParticles(dt) {
@@ -892,7 +1148,7 @@ function update(dt, t) {
     updatePlayer(dt, t);
     updatePowerUps(dt);
     updateTunnel(dt, t);
-    checkCollisions();
+    checkCollisions(t);
     updateScore(dt);
     spawnSegmentsIfNeeded();
     despawnBehind();

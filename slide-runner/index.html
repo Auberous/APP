@@ -4,7 +4,7 @@
 <meta charset="UTF-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no, viewport-fit=cover" />
 <title>Slide Runner</title>
-<meta name="description" content="Slide Runner — a neon 3D vertical freefall dodge game. Hold to drift right, release to drift left. One hit and it's over." />
+<meta name="description" content="Slide Runner — a neon 3D freefall dive through a sci-fi city. Steer left/right, hold DIVE to drop faster. One hit and it's over." />
 <meta name="theme-color" content="#05010f" />
 <link rel="stylesheet" href="style.css" />
 </head>
@@ -19,15 +19,23 @@
     <div id="powerup-banner" class="hidden"></div>
   </div>
 
+  <!-- Touch controls (visible while RUNNING) -->
+  <div id="controls" class="hidden">
+    <div class="steer-hint steer-hint-left">&#8592;</div>
+    <div class="steer-hint steer-hint-right">&#8594;</div>
+    <button id="btn-dive" class="btn-dive">DIVE</button>
+  </div>
+
   <!-- Start screen -->
   <div id="start-screen" class="overlay">
     <div class="panel">
       <h1><span class="glow-cyan">SLIDE</span><span class="glow-magenta">RUNNER</span></h1>
-      <p class="tagline">Hold to drift right. Release to drift left. One hit ends it.</p>
+      <p class="tagline">Tap left/right to steer. Hold DIVE to drop faster. One hit ends it.</p>
       <button id="btn-start" class="btn btn-primary">TAP TO START</button>
       <div class="best-row">BEST DISTANCE <span id="best-start-value">0</span>m</div>
       <div class="hint-row">
-        <span class="key">HOLD</span> or <span class="key">&#8594; / D / SPACE</span> to drift right
+        <span class="key">&#8592; A</span> / <span class="key">D &#8594;</span> steer &nbsp;
+        <span class="key">SPACE</span> dive
       </div>
     </div>
   </div>

@@ -93,6 +93,56 @@ html, body {
 
 .hidden { display: none !important; }
 
+/* ---------- Touch controls ---------- */
+#controls {
+  position: fixed;
+  inset: 0;
+  z-index: 4;
+}
+
+.steer-hint {
+  position: absolute;
+  bottom: 0;
+  top: 0;
+  width: 50%;
+  display: flex;
+  align-items: flex-end;
+  justify-content: center;
+  padding-bottom: max(36px, env(safe-area-inset-bottom));
+  font-size: 34px;
+  color: rgba(234, 246, 255, 0.12);
+  pointer-events: none;
+  user-select: none;
+}
+.steer-hint-left { left: 0; }
+.steer-hint-right { right: 0; }
+
+.btn-dive {
+  position: absolute;
+  left: 50%;
+  bottom: max(28px, env(safe-area-inset-bottom));
+  transform: translateX(-50%);
+  width: 76px;
+  height: 76px;
+  border-radius: 50%;
+  border: 2px solid rgba(255, 90, 60, 0.6);
+  background: radial-gradient(circle at 35% 30%, rgba(255, 140, 60, 0.55), rgba(255, 47, 95, 0.35) 70%, rgba(10, 4, 20, 0.6));
+  color: #fff;
+  font-family: var(--font-display);
+  font-size: 12px;
+  font-weight: 700;
+  letter-spacing: 2px;
+  box-shadow: 0 0 18px rgba(255, 90, 60, 0.45);
+  pointer-events: auto;
+  touch-action: none;
+  cursor: pointer;
+  transition: transform 0.08s ease, box-shadow 0.15s ease;
+}
+.btn-dive:active {
+  transform: translateX(-50%) scale(0.92);
+  box-shadow: 0 0 32px rgba(255, 120, 60, 0.75);
+}
+
 /* ---------- Overlays ---------- */
 .overlay {
   position: fixed;
