@@ -5,23 +5,29 @@
 //   player.distance — how far the player has fallen (spec's "x"), always
 //                      increasing. Maps to world Y = -distance, so falling
 //                      further means a more negative world Y (descending).
-//   player.y        — the *lateral* (left/right) position the player
-//                      controls by holding/releasing. Despite the name (kept
-//                      to match the design doc's field, and because it's
-//                      still "the bounded/controlled axis" everywhere in the
-//                      generation/physics/collision code below), it maps to
-//                      world X, not world Y.
-//   world Z         — a small fixed cosmetic depth, used only to give the
-//                      shaft visual thickness and pose the player figure;
-//                      irrelevant to gameplay.
+//   player.y        — the *left/right* position the player steers, mapping
+//                      to world X. (Kept as "y" rather than renamed to match
+//                      the design doc's field, and because it's still "a
+//                      bounded/controlled axis" like the rest of this file.)
+//   player.z        — the *toward/away-from-camera* position the player
+//                      steers, mapping to world Z directly. Because the
+//                      chase camera sits above and slightly behind the
+//                      player looking down, moving in Z reads on screen as
+//                      moving up/down — so together, player.y and player.z
+//                      give full 2D steering (left/right and up/down) across
+//                      the shaft's cross-section, each bounded independently
+//                      (`boundsAt` for X, `boundsZAt` for Z).
 //
-// All the tunnel generation, physics, and collision code below only ever
-// reasons about "distance" (progress) and "y" (the bounded lateral
-// coordinate) in the abstract — it has no idea which world axis either one
-// actually renders to. Only the handful of `.position.set(...)` / rotation
-// calls near the bottom (wall building, hazard/powerup placement, the
-// player, and the camera rig) do that mapping, which is what makes this a
-// vertical shaft instead of the horizontal tunnel this started as.
+// The X-axis bounds come from generated keypoints (tunnel generation,
+// hazards, power-ups); the Z-axis bounds are a pure function of `distance`
+// (see `boundsZAt`) rather than keypoint state, since they only need to
+// wander gently rather than carry the same hazard variety as X. Both are
+// reasoned about abstractly — nothing in the generation/physics/collision
+// code below knows which world axis it renders to. Only the handful of
+// `.position.set(...)` / rotation calls near the bottom (wall building,
+// hazard/powerup placement, the player, and the camera rig) do that
+// mapping, which is what makes this a vertical shaft instead of the
+// horizontal tunnel this started as.
 //
 // The player and camera move forward (downward) through a world that is
 // generated once and never re-positioned — this keeps per-frame work cheap.
@@ -55,6 +61,10 @@ const DIVE_STEER_FACTOR = 0.55;     // steering authority while diving (tucked =
 
 const MIN_HALF_HEIGHT = 1.05;       // tightest safe channel half-height (must clear player radius)
 const MAX_HALF_HEIGHT = 3.4;
+
+const MIN_HALF_DEPTH = 1.4;         // tightest Z (toward/away) channel — gentler than X's tightest squeeze
+const MAX_HALF_DEPTH = 3.4;
+const Z_DIFFICULTY_DISTANCE = 1100; // distance over which the Z channel gradually tightens
 
 const POWERUP_TYPES = ['boost', 'shrink', 'reverse'];
 const POWERUP_COLORS = { boost: 0xffd23f, shrink: 0x33f9ff, reverse: 0xff2fd0 };
@@ -309,9 +319,11 @@ function applyPose(limb, pose, flutter) {
 // snapping, so the transition into/out of a dive reads as a real pose change.
 function updatePlayerPose(t, diveBlend) {
   const bank = THREE.MathUtils.clamp(player.velocityY / PLAYER_VELOCITY_Y, -1, 1);
+  const pitchTarget = THREE.MathUtils.clamp(player.velocityZ / PLAYER_VELOCITY_Y, -1, 1);
+  easedPitch += (pitchTarget - easedPitch) * 0.12;
   playerMesh.rotation.z = THREE.MathUtils.lerp(playerMesh.rotation.z, -bank * 0.5, 0.12);
   playerMesh.rotation.y = THREE.MathUtils.lerp(playerMesh.rotation.y, bank * 0.22, 0.12);
-  playerMesh.rotation.x = THREE.MathUtils.lerp(-0.08, -0.35, diveBlend) + Math.sin(t * 1.4) * 0.03 * (1 - diveBlend);
+  playerMesh.rotation.x = THREE.MathUtils.lerp(-0.08, -0.35, diveBlend) + easedPitch * 0.32 + Math.sin(t * 1.4) * 0.03 * (1 - diveBlend);
 
   const flapArm = Math.sin(t * 8.5) * 0.14 * (1 - diveBlend * 0.7);
   const flapLeg = Math.sin(t * 8.5 + Math.PI) * 0.1 * (1 - diveBlend * 0.7);
@@ -367,12 +379,15 @@ const gameState = { RUNNING: 'RUNNING', GAME_OVER: 'GAME_OVER', READY: 'READY' }
 
 const player = {
   distance: 0,     // spec "x" — forward progress
-  y: 0,
+  y: 0,            // left/right (world X)
+  z: 0,            // toward/away from camera, reads as up/down (world Z)
   radius: PLAYER_RADIUS_BASE,
   velocityY: 0,
+  velocityZ: 0,
   isAlive: true,
   activePowerUps: [], // { type, remainingTime }
 };
+let easedPitch = 0; // smoothed velocityZ, drives the player's pitch pose (see updatePlayerPose)
 
 let state = gameState.READY;
 let elapsedTime = 0;       // seconds since run start
@@ -407,12 +422,12 @@ let shakeStrength = 0;
 const START_GRACE = 0.4;
 let startGrace = 0;
 
-// Input: steer left/right (eases toward straight when released — see
+// Input: 2D steering (eases toward straight when released — see
 // handleInput) plus an independent dive hold for a faster, harder-to-steer
-// tucked descent. `dir` combines keyboard + pointer sources, clamped to
-// [-1, 1]; `diving` combines its own sources the same way.
-let keyLeftHeld = false, keyRightHeld = false, keyDiveHeld = false;
-let pointerDir = 0, steerPointerId = null;
+// tucked descent. `dirX`/`dirZ` combine keyboard + pointer sources, clamped
+// to [-1, 1] each; `diving` combines its own sources the same way.
+let keyLeftHeld = false, keyRightHeld = false, keyUpHeld = false, keyDownHeld = false, keyDiveHeld = false;
+let pointerDirX = 0, pointerDirZ = 0, steerPointerId = null;
 let pointerDive = false, divePointerId = null;
 let diving = false;
 let diveBlend = 0; // eased 0 (arch pose) -> 1 (tuck), see updatePlayer
@@ -439,18 +454,28 @@ document.getElementById('btn-start').addEventListener('click', startRun);
 document.getElementById('btn-restart').addEventListener('click', startRun);
 const diveBtn = document.getElementById('btn-dive');
 
-// Steering: touch/click the left or right half of the screen (tracked by
-// pointerId so a second finger on the dive button doesn't cancel it), or
-// keyboard arrows/AD.
-function steerDirFromEvent(e) { return e.clientX < window.innerWidth / 2 ? -1 : 1; }
+// Steering: the whole screen is a continuous 2D joystick — touch/drag
+// anywhere and your position relative to screen center sets the target
+// steer direction on both axes at once (tracked by pointerId so a second
+// finger on the dive button doesn't cancel it), or keyboard arrows/WASD.
+function steerVectorFromEvent(e) {
+  const nx = (e.clientX / window.innerWidth) * 2 - 1;
+  const nz = (e.clientY / window.innerHeight) * 2 - 1;
+  return { x: THREE.MathUtils.clamp(nx, -1, 1), z: THREE.MathUtils.clamp(nz, -1, 1) };
+}
 canvas.addEventListener('pointerdown', (e) => {
   steerPointerId = e.pointerId;
-  pointerDir = steerDirFromEvent(e);
+  const v = steerVectorFromEvent(e);
+  pointerDirX = v.x; pointerDirZ = v.z;
   e.preventDefault();
 });
-window.addEventListener('pointermove', (e) => { if (e.pointerId === steerPointerId) pointerDir = steerDirFromEvent(e); });
-window.addEventListener('pointerup', (e) => { if (e.pointerId === steerPointerId) { pointerDir = 0; steerPointerId = null; } });
-window.addEventListener('pointercancel', (e) => { if (e.pointerId === steerPointerId) { pointerDir = 0; steerPointerId = null; } });
+window.addEventListener('pointermove', (e) => {
+  if (e.pointerId !== steerPointerId) return;
+  const v = steerVectorFromEvent(e);
+  pointerDirX = v.x; pointerDirZ = v.z;
+});
+window.addEventListener('pointerup', (e) => { if (e.pointerId === steerPointerId) { pointerDirX = 0; pointerDirZ = 0; steerPointerId = null; } });
+window.addEventListener('pointercancel', (e) => { if (e.pointerId === steerPointerId) { pointerDirX = 0; pointerDirZ = 0; steerPointerId = null; } });
 
 // Dive: a dedicated button (own DOM element, so it never fights the canvas
 // steering zones underneath it) plus a keyboard hold.
@@ -465,16 +490,22 @@ window.addEventListener('pointercancel', (e) => { if (e.pointerId === divePointe
 
 const LEFT_KEYS = new Set(['ArrowLeft', 'KeyA']);
 const RIGHT_KEYS = new Set(['ArrowRight', 'KeyD']);
-const DIVE_KEYS = new Set(['Space', 'ShiftLeft', 'ShiftRight', 'ArrowDown', 'KeyS']);
+const UP_KEYS = new Set(['ArrowUp', 'KeyW']);
+const DOWN_KEYS = new Set(['ArrowDown', 'KeyS']);
+const DIVE_KEYS = new Set(['Space', 'ShiftLeft', 'ShiftRight']);
 window.addEventListener('keydown', (e) => {
   if (LEFT_KEYS.has(e.code)) { keyLeftHeld = true; e.preventDefault(); }
   if (RIGHT_KEYS.has(e.code)) { keyRightHeld = true; e.preventDefault(); }
+  if (UP_KEYS.has(e.code)) { keyUpHeld = true; e.preventDefault(); }
+  if (DOWN_KEYS.has(e.code)) { keyDownHeld = true; e.preventDefault(); }
   if (DIVE_KEYS.has(e.code)) { keyDiveHeld = true; e.preventDefault(); }
   if (e.code === 'Enter' && state === gameState.READY) startRun();
 });
 window.addEventListener('keyup', (e) => {
   if (LEFT_KEYS.has(e.code)) keyLeftHeld = false;
   if (RIGHT_KEYS.has(e.code)) keyRightHeld = false;
+  if (UP_KEYS.has(e.code)) keyUpHeld = false;
+  if (DOWN_KEYS.has(e.code)) keyDownHeld = false;
   if (DIVE_KEYS.has(e.code)) keyDiveHeld = false;
 });
 
@@ -504,24 +535,43 @@ function buildWallSegment(p1, b1, p2, b2, thickness, crossDepth, material) {
   return mesh;
 }
 
-// Front/back rails are visual only (gameplay bounds are purely lateral) —
-// they run at a fixed width band so the shaft still reads as enclosed even
-// while the walls wobble through a squeeze or zig-zag.
-const SIDE_RAIL_SPAN = 8;
+// Same idea as buildWallSegment, but blocks the Z axis (front/back
+// buildings) instead of X (left/right) — a real, collidable wall now, using
+// boundsZAt so the geometry always matches the collision check exactly.
+function buildWallSegmentZ(p1, b1, p2, b2, thickness, crossX, material) {
+  const dyWorld = -(p2 - p1);
+  const dzWorld = b2 - b1;
+  const len = Math.hypot(dyWorld, dzWorld);
+  const geo = new THREE.BoxGeometry(crossX, Math.max(len, 0.001), thickness);
+  const mesh = new THREE.Mesh(geo, material);
+  mesh.position.set(0, -(p1 + p2) / 2, (b1 + b2) / 2);
+  mesh.rotation.x = Math.atan2(dzWorld, dyWorld);
+  scene.add(mesh);
+  return mesh;
+}
+
+// Cosmetic X-extent of the front/back Z-walls — generous enough to stay
+// visually clear of the X-channel regardless of how it wobbles.
+const Z_WALL_CROSS = 12;
 
 function addKeypoint(x, centerY, halfHeight, theme) {
   const kp = { x, centerY, halfHeight, theme };
   const prev = keypoints[keypoints.length - 1];
   keypoints.push(kp);
   if (prev) {
-    const mat = Math.random() < 0.28 ? wallMatWarm : (theme === 'alt' ? wallMatAlt : wallMat);
+    const pickMat = () => (Math.random() < 0.28 ? wallMatWarm : (Math.random() < 0.5 ? wallMatAlt : wallMat));
+    const mat = theme === 'alt' && Math.random() > 0.28 ? wallMatAlt : pickMat();
     const rightWall = buildWallSegment(prev.x, prev.centerY + prev.halfHeight, x, centerY + halfHeight, WALL_THICK, TUNNEL_HALF_WIDTH * 2, mat);
     const leftWall = buildWallSegment(prev.x, prev.centerY - prev.halfHeight, x, centerY - halfHeight, WALL_THICK, TUNNEL_HALF_WIDTH * 2, mat);
-    const back = buildWallSegment(prev.x, 0, x, 0, SIDE_RAIL_SPAN, WALL_THICK, skylineMat);
-    back.position.z = -TUNNEL_HALF_WIDTH;
-    const front = buildWallSegment(prev.x, 0, x, 0, SIDE_RAIL_SPAN, WALL_THICK, skylineMat);
-    front.position.z = TUNNEL_HALF_WIDTH;
-    wallMeshes.push({ mesh: rightWall, x2: x }, { mesh: leftWall, x2: x }, { mesh: back, x2: x }, { mesh: front, x2: x });
+
+    // Front/back walls: real, collidable buildings now (not decorative
+    // planks) — their bounds come from boundsZAt, the same function
+    // checkCollisions uses, so what you see is exactly what can hit you.
+    const zb1 = boundsZAt(prev.x);
+    const zb2 = boundsZAt(x);
+    const frontWall = buildWallSegmentZ(prev.x, zb1.front, x, zb2.front, WALL_THICK, Z_WALL_CROSS, pickMat());
+    const backWall = buildWallSegmentZ(prev.x, zb1.back, x, zb2.back, WALL_THICK, Z_WALL_CROSS, pickMat());
+    wallMeshes.push({ mesh: rightWall, x2: x }, { mesh: leftWall, x2: x }, { mesh: frontWall, x2: x }, { mesh: backWall, x2: x });
 
     // Occasional rooftop tower jutting out from one wall — purely decorative
     // (collision only ever checks the smooth interpolated boundary), but it
@@ -876,6 +926,22 @@ function boundsAt(x) {
   return { top: MAX_HALF_HEIGHT, bottom: -MAX_HALF_HEIGHT };
 }
 
+// The Z (toward/away-from-camera) channel is a pure function of progress
+// rather than generated keypoints — it only needs to wander gently and
+// gradually tighten, not carry the same hazard variety as the X axis. Used
+// for both collision (checkCollisions) and the front/back wall geometry
+// (addKeypoint), so the two always agree exactly.
+function zHalfDepthAt(x) {
+  const factor = THREE.MathUtils.clamp(x / Z_DIFFICULTY_DISTANCE, 0, 1);
+  return THREE.MathUtils.lerp(MAX_HALF_DEPTH, MIN_HALF_DEPTH, factor);
+}
+function boundsZAt(x) {
+  const halfDepth = zHalfDepthAt(x);
+  const room = MAX_HALF_DEPTH - halfDepth + 0.5;
+  const centerZ = Math.sin(x * 0.09) * room * 0.65 + Math.sin(x * 0.027 + 1.7) * room * 0.35;
+  return { front: centerZ + halfDepth, back: centerZ - halfDepth };
+}
+
 // ---------------------------------------------------------------------------
 // Reset / start
 // ---------------------------------------------------------------------------
@@ -898,10 +964,13 @@ function resetWorld() {
 
   player.distance = 0;
   player.y = 0;
+  player.z = 0;
   player.velocityY = 0;
+  player.velocityZ = 0;
   player.isAlive = true;
   player.radius = PLAYER_RADIUS_BASE;
   player.activePowerUps = [];
+  easedPitch = 0;
 
   elapsedTime = 0;
   currentSpeed = BASE_SPEED;
@@ -952,13 +1021,18 @@ function die() {
 // ---------------------------------------------------------------------------
 function handleInput(dt) {
   diving = pointerDive || keyDiveHeld;
+  const steerMult = diving ? DIVE_STEER_FACTOR : 1;
 
-  const keyDir = (keyRightHeld ? 1 : 0) - (keyLeftHeld ? 1 : 0);
-  const dir = THREE.MathUtils.clamp(pointerDir + keyDir, -1, 1);
-  const targetVel = dir * PLAYER_VELOCITY_Y * (diving ? DIVE_STEER_FACTOR : 1);
+  const keyDirX = (keyRightHeld ? 1 : 0) - (keyLeftHeld ? 1 : 0);
+  const keyDirZ = (keyDownHeld ? 1 : 0) - (keyUpHeld ? 1 : 0);
+  const dirX = THREE.MathUtils.clamp(pointerDirX + keyDirX, -1, 1);
+  const dirZ = THREE.MathUtils.clamp(pointerDirZ + keyDirZ, -1, 1);
+  const targetVelX = dirX * PLAYER_VELOCITY_Y * steerMult;
+  const targetVelZ = dirZ * PLAYER_VELOCITY_Y * steerMult;
   // Ease toward the target rather than snapping, so letting go settles back
   // to falling straight instead of instantly zeroing out.
-  player.velocityY += (targetVel - player.velocityY) * Math.min(1, dt * DRIFT_ACCEL);
+  player.velocityY += (targetVelX - player.velocityY) * Math.min(1, dt * DRIFT_ACCEL);
+  player.velocityZ += (targetVelZ - player.velocityZ) * Math.min(1, dt * DRIFT_ACCEL);
 
   diveBlend += ((diving ? 1 : 0) - diveBlend) * Math.min(1, dt * 6);
 }
@@ -969,9 +1043,11 @@ function isInvincible() {
 
 function updatePlayer(dt, t) {
   player.y += player.velocityY * dt;
+  player.z += player.velocityZ * dt;
   // Soft clamp to a generous absolute range so a boosted phase-through never
   // sends the player wildly off-screen.
   player.y = THREE.MathUtils.clamp(player.y, -MAX_HALF_HEIGHT - 1, MAX_HALF_HEIGHT + 1);
+  player.z = THREE.MathUtils.clamp(player.z, -MAX_HALF_DEPTH - 1, MAX_HALF_DEPTH + 1);
 
   const reversing = player.activePowerUps.some((p) => p.type === 'reverse');
   const boosting = player.activePowerUps.some((p) => p.type === 'boost');
@@ -982,10 +1058,10 @@ function updatePlayer(dt, t) {
 
   player.distance = Math.max(0, player.distance + speed * dt);
 
-  playerMesh.position.set(player.y, -player.distance, 0);
+  playerMesh.position.set(player.y, -player.distance, player.z);
   playerMesh.scale.setScalar(player.radius / PLAYER_RADIUS_BASE);
   updatePlayerPose(t, diveBlend);
-  playerLight.position.set(player.y, -player.distance + 1.5, 0);
+  playerLight.position.set(player.y, -player.distance + 1.5, player.z);
   playerLight.color.setHex(boosting ? 0xffd23f : reversing ? 0xff2fd0 : diving ? 0xff5a3c : 0x66e0ff);
 
   // Trail
@@ -993,7 +1069,7 @@ function updatePlayer(dt, t) {
   const trailColor = boosting ? 0xffd23f : reversing ? 0xff2fd0 : diving ? 0xff5a3c : (player.radius < PLAYER_RADIUS_BASE ? 0x33f9ff : 0x66e0ff);
   if (trailAccum > (diving ? 0.012 : 0.02)) {
     trailAccum = 0;
-    emitTrail(player.y, -player.distance + 0.2, 0, trailColor);
+    emitTrail(player.y, -player.distance + 0.2, player.z, trailColor);
   }
 }
 
@@ -1080,9 +1156,16 @@ function checkCollisions(t) {
   if (startGrace > 0) return;
   const invincible = isInvincible();
 
-  // Tunnel walls
+  // Tunnel walls (X)
   const b = boundsAt(player.distance);
   if (!invincible && (player.y + player.radius > b.top || player.y - player.radius < b.bottom)) {
+    die();
+    return;
+  }
+
+  // Front/back walls (Z)
+  const bz = boundsZAt(player.distance);
+  if (!invincible && (player.z + player.radius > bz.front || player.z - player.radius < bz.back)) {
     die();
     return;
   }
@@ -1157,7 +1240,7 @@ function updateCamera(dt, t) {
   const back = boosting ? 2.3 : 1.9;
   const targetX = player.y;
   const targetY = -player.distance + above;
-  const targetZ = back;
+  const targetZ = player.z + back;
 
   camera.position.x += (targetX - camera.position.x) * Math.min(1, dt * 8);
   camera.position.y += (targetY - camera.position.y) * Math.min(1, dt * 8);
@@ -1170,7 +1253,7 @@ function updateCamera(dt, t) {
     camera.position.z += (Math.random() - 0.5) * s;
   }
 
-  camera.lookAt(player.y, -player.distance - 6, 0);
+  camera.lookAt(player.y, -player.distance - 6, player.z);
 
   // Keep the distant skyline (and the sun glow) centered on the player's
   // fall depth so they read as an endless city and a fixed sky, rather

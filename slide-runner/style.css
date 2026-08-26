@@ -109,24 +109,23 @@ html, body {
   position: fixed;
   inset: 0;
   z-index: 4;
+  pointer-events: none; /* let clicks fall through to the canvas underneath; children opt back in */
 }
 
+/* Faint compass arrows at the four edges — a hint that the whole screen is
+   a 2D steering surface (drag toward an edge to steer that way), not a
+   literal hit target. */
 .steer-hint {
   position: absolute;
-  bottom: 0;
-  top: 0;
-  width: 50%;
-  display: flex;
-  align-items: flex-end;
-  justify-content: center;
-  padding-bottom: max(36px, env(safe-area-inset-bottom));
-  font-size: 34px;
-  color: rgba(234, 246, 255, 0.12);
+  font-size: 26px;
+  color: rgba(234, 246, 255, 0.14);
   pointer-events: none;
   user-select: none;
 }
-.steer-hint-left { left: 0; }
-.steer-hint-right { right: 0; }
+.steer-hint-left  { left: 16px; top: 50%; transform: translateY(-50%); }
+.steer-hint-right { right: 16px; top: 50%; transform: translateY(-50%); }
+.steer-hint-up    { top: max(22px, env(safe-area-inset-top)); left: 50%; transform: translateX(-50%); }
+.steer-hint-down  { bottom: 128px; left: 50%; transform: translateX(-50%); }
 
 .btn-dive {
   position: absolute;
