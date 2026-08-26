@@ -153,6 +153,31 @@ html, body {
   box-shadow: 0 0 32px rgba(255, 120, 60, 0.75);
 }
 
+/* Virtual joystick — appears at the touch point (see game.js), a ring with
+   a nub that tracks the drag, clamped to the ring's radius. */
+.joystick {
+  position: fixed;
+  width: 124px;
+  height: 124px;
+  border-radius: 50%;
+  border: 2px solid rgba(234, 246, 255, 0.22);
+  background: rgba(20, 10, 35, 0.18);
+  transform: translate(-50%, -50%);
+  pointer-events: none;
+}
+.joystick-nub {
+  position: absolute;
+  left: 50%;
+  top: 50%;
+  width: 54px;
+  height: 54px;
+  border-radius: 50%;
+  background: radial-gradient(circle at 35% 30%, rgba(51, 249, 255, 0.6), rgba(155, 92, 255, 0.4) 75%);
+  border: 1px solid rgba(255, 255, 255, 0.4);
+  box-shadow: 0 0 20px rgba(51, 249, 255, 0.5);
+  transform: translate(-50%, -50%);
+}
+
 /* ---------- Overlays ---------- */
 .overlay {
   position: fixed;

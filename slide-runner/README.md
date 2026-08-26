@@ -27,11 +27,13 @@ python3 -m http.server 8000
 
 ## Controls
 
-- **Drag anywhere on screen** (the whole screen is a 2D joystick — your
-  position relative to center sets the target steer direction on both
-  axes), or **arrows / WASD** — steer left/right *and* toward/away from the
-  camera, which reads on screen as up/down. Release and you settle back to
-  falling straight; you don't snap back to center.
+- **Touch/drag anywhere** — a virtual joystick (ring + nub) appears right
+  where you touch down, so there's no fixed hit zone to reach; drag away
+  from that point to steer, reaching full deflection within ~60px so it
+  stays easy to drive with a small thumb motion. Or **arrows / WASD** —
+  steer left/right *and* toward/away from the camera, which reads on screen
+  as up/down. Release and you settle back to falling straight; you don't
+  snap back to center.
 - **DIVE button** (or **Space / Shift**) — hold to tuck into a streamlined
   dive: faster descent (higher score rate), but reduced steering authority
   while tucked — a real risk/reward call, not just a boost.
@@ -79,6 +81,21 @@ python3 -m http.server 8000
 - **Hazards**: rotating blades use a true rotation-based lateral danger
   window (safe when aligned with the shaft, deadly when aligned across it)
   rather than a fixed box, so dodging them is genuinely timing-based.
+- **Camera**: fixed two real bugs found while chasing "movement isn't easy /
+  the camera loses the character" reports. (1) The camera looks almost
+  straight down (-Y) the whole game, which is a gimbal-lock condition for
+  `lookAt()` — nearly parallel to the default up vector (0,1,0), so its
+  internal "camera right" cross product went near-degenerate and tiny X/Z
+  drift whipped the view into wild uncontrolled rolls. Fixed by pointing
+  `camera.up` along -Z instead (perpendicular to the actual view direction),
+  which keeps that cross product well-defined. (2) The camera trails the
+  player by a fixed offset in Z for a 3/4 chase view; as the Z channel
+  tightens that offset could push the camera past the front wall entirely,
+  staring through/into it and hiding the player — now clamped against the
+  live channel (`boundsZAt`) so the camera always stays a safe margin inside
+  it. A speed-based radial motion-streak `ShaderPass` (a handful of samples
+  pulled toward screen center, strength driven by `currentSpeed` plus a kick
+  for dive/boost) also sells the higher speed visually, not just numerically.
 - **Power-ups**: Boost (1s, invincible + speed + FOV widen), Shrink (3s,
   smaller hitbox), Reverse (0.5s chaotic backward zoom, invincible so the
   "chaos moment" reads as a thrill rather than a cheap death) — both spawned

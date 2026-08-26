@@ -39,6 +39,7 @@ import { EffectComposer } from 'three/addons/postprocessing/EffectComposer.js';
 import { RenderPass } from 'three/addons/postprocessing/RenderPass.js';
 import { UnrealBloomPass } from 'three/addons/postprocessing/UnrealBloomPass.js';
 import { OutputPass } from 'three/addons/postprocessing/OutputPass.js';
+import { ShaderPass } from 'three/addons/postprocessing/ShaderPass.js';
 
 // ---------------------------------------------------------------------------
 // Constants / tuning
@@ -46,17 +47,17 @@ import { OutputPass } from 'three/addons/postprocessing/OutputPass.js';
 const TUNNEL_HALF_WIDTH = 3.2;      // visual depth (Z) of the shaft — cosmetic only
 const WALL_THICK = 0.22;
 const KEYPOINT_SPACING = 3;         // forward (downward) distance between tunnel keypoints
-const LOOKAHEAD = 130;              // keep the world generated this far below the player
-const DESPAWN_BEHIND = 18;          // drop geometry this far above the player
+const LOOKAHEAD = 160;              // keep the world generated this far below the player
+const DESPAWN_BEHIND = 22;          // drop geometry this far above the player
 
-const BASE_SPEED = 12.5;
-const DIFFICULTY_FACTOR = 0.14;     // currentSpeed = base + elapsed * factor
-const MAX_SPEED = 34;
+const BASE_SPEED = 15.5;
+const DIFFICULTY_FACTOR = 0.17;     // currentSpeed = base + elapsed * factor
+const MAX_SPEED = 42;
 
 const PLAYER_RADIUS_BASE = 0.42;
-const PLAYER_VELOCITY_Y = 8.6;      // top lateral drift speed while actively steering
-const DRIFT_ACCEL = 10;             // how fast lateral velocity eases toward its target (steer, or 0 to fall straight)
-const DIVE_SPEED_MULT = 1.9;        // fall-speed multiplier while diving
+const PLAYER_VELOCITY_Y = 9.8;      // top lateral drift speed while actively steering
+const DRIFT_ACCEL = 13;             // how fast lateral velocity eases toward its target (steer, or 0 to fall straight) — higher = snappier, easier to control
+const DIVE_SPEED_MULT = 2.1;        // fall-speed multiplier while diving
 const DIVE_STEER_FACTOR = 0.55;     // steering authority while diving (tucked = harder to correct)
 
 const MIN_HALF_HEIGHT = 1.05;       // tightest safe channel half-height (must clear player radius)
@@ -90,11 +91,54 @@ scene.fog = new THREE.FogExp2(SKY_COLOR, 0.017);
 const BASE_FOV = 72;
 const BOOST_FOV = 88;
 const camera = new THREE.PerspectiveCamera(BASE_FOV, window.innerWidth / window.innerHeight, 0.1, 200);
+// The camera looks almost straight down (-Y) the whole game — nearly
+// parallel to the default up vector (0,1,0). That's a gimbal-lock
+// condition for lookAt(): the "camera right" cross product it computes
+// internally goes near-degenerate, so tiny X/Z position changes were
+// whipping the view into wild, uncontrolled rolls instead of the intended
+// gentle bank. Pointing `up` along -Z instead (perpendicular to our actual
+// view direction) keeps that cross product well-defined and the camera
+// orientation stable no matter how the player drifts.
+camera.up.set(0, 0, -1);
 
 const composer = new EffectComposer(renderer);
 composer.addPass(new RenderPass(scene, camera));
 const bloomPass = new UnrealBloomPass(new THREE.Vector2(window.innerWidth, window.innerHeight), 0.72, 0.45, 0.28);
 composer.addPass(bloomPass);
+
+// A cheap radial zoom-streak — a handful of samples pulled toward screen
+// center — driven by currentSpeed (plus a kick for dive/boost) so going
+// fast actually *looks* fast, not just faster numbers on the HUD.
+const speedStreakPass = new ShaderPass({
+  uniforms: { tDiffuse: { value: null }, uStrength: { value: 0 } },
+  vertexShader: `
+    varying vec2 vUv;
+    void main() {
+      vUv = uv;
+      gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0);
+    }
+  `,
+  fragmentShader: `
+    uniform sampler2D tDiffuse;
+    uniform float uStrength;
+    varying vec2 vUv;
+    void main() {
+      vec2 center = vec2(0.5, 0.42);
+      vec2 dir = vUv - center;
+      vec4 sum = texture2D(tDiffuse, vUv);
+      float total = 1.0;
+      const int SAMPLES = 5;
+      for (int i = 1; i <= SAMPLES; i++) {
+        float t = float(i) / float(SAMPLES);
+        sum += texture2D(tDiffuse, vUv - dir * uStrength * t);
+        total += 1.0;
+      }
+      gl_FragColor = sum / total;
+    }
+  `,
+});
+composer.addPass(speedStreakPass);
+
 composer.addPass(new OutputPass());
 
 function onResize() {
@@ -453,29 +497,46 @@ bestInlineEl.textContent = Math.floor(best);
 document.getElementById('btn-start').addEventListener('click', startRun);
 document.getElementById('btn-restart').addEventListener('click', startRun);
 const diveBtn = document.getElementById('btn-dive');
+const joystickEl = document.getElementById('joystick');
+const joystickNubEl = document.getElementById('joystick-nub');
 
-// Steering: the whole screen is a continuous 2D joystick — touch/drag
-// anywhere and your position relative to screen center sets the target
-// steer direction on both axes at once (tracked by pointerId so a second
-// finger on the dive button doesn't cancel it), or keyboard arrows/WASD.
-function steerVectorFromEvent(e) {
-  const nx = (e.clientX / window.innerWidth) * 2 - 1;
-  const nz = (e.clientY / window.innerHeight) * 2 - 1;
-  return { x: THREE.MathUtils.clamp(nx, -1, 1), z: THREE.MathUtils.clamp(nz, -1, 1) };
+// Steering: a drag-anchored virtual joystick — touch down anywhere (no
+// fixed hit zone to reach) and that point becomes the joystick's center;
+// dragging away from it sets the target steer direction on both axes at
+// once, reaching full deflection at JOYSTICK_RADIUS px so it stays easy to
+// drive with a small, natural thumb motion. A ring + nub render at the
+// touch point so the input is visible, not just implied. Tracked by
+// pointerId so a second finger on the dive button doesn't cancel it. Also
+// drivable with keyboard arrows/WASD.
+const JOYSTICK_RADIUS = 62; // px of drag for full deflection
+let joystickAnchorX = 0, joystickAnchorY = 0;
+
+function showJoystick(x, y) {
+  joystickEl.style.left = `${x}px`;
+  joystickEl.style.top = `${y}px`;
+  joystickEl.classList.remove('hidden');
+  joystickNubEl.style.transform = 'translate(-50%, -50%)';
 }
+function moveJoystickNub(nx, nz) {
+  joystickNubEl.style.transform = `translate(calc(-50% + ${nx * JOYSTICK_RADIUS}px), calc(-50% + ${nz * JOYSTICK_RADIUS}px))`;
+}
+function hideJoystick() { joystickEl.classList.add('hidden'); }
+
 canvas.addEventListener('pointerdown', (e) => {
   steerPointerId = e.pointerId;
-  const v = steerVectorFromEvent(e);
-  pointerDirX = v.x; pointerDirZ = v.z;
+  joystickAnchorX = e.clientX; joystickAnchorY = e.clientY;
+  pointerDirX = 0; pointerDirZ = 0;
+  showJoystick(joystickAnchorX, joystickAnchorY);
   e.preventDefault();
 });
 window.addEventListener('pointermove', (e) => {
   if (e.pointerId !== steerPointerId) return;
-  const v = steerVectorFromEvent(e);
-  pointerDirX = v.x; pointerDirZ = v.z;
+  pointerDirX = THREE.MathUtils.clamp((e.clientX - joystickAnchorX) / JOYSTICK_RADIUS, -1, 1);
+  pointerDirZ = THREE.MathUtils.clamp((e.clientY - joystickAnchorY) / JOYSTICK_RADIUS, -1, 1);
+  moveJoystickNub(pointerDirX, pointerDirZ);
 });
-window.addEventListener('pointerup', (e) => { if (e.pointerId === steerPointerId) { pointerDirX = 0; pointerDirZ = 0; steerPointerId = null; } });
-window.addEventListener('pointercancel', (e) => { if (e.pointerId === steerPointerId) { pointerDirX = 0; pointerDirZ = 0; steerPointerId = null; } });
+window.addEventListener('pointerup', (e) => { if (e.pointerId === steerPointerId) { pointerDirX = 0; pointerDirZ = 0; steerPointerId = null; hideJoystick(); } });
+window.addEventListener('pointercancel', (e) => { if (e.pointerId === steerPointerId) { pointerDirX = 0; pointerDirZ = 0; steerPointerId = null; hideJoystick(); } });
 
 // Dive: a dedicated button (own DOM element, so it never fights the canvas
 // steering zones underneath it) plus a keyboard hold.
@@ -1240,7 +1301,14 @@ function updateCamera(dt, t) {
   const back = boosting ? 2.3 : 1.9;
   const targetX = player.y;
   const targetY = -player.distance + above;
-  const targetZ = player.z + back;
+  // The camera trails the player by a fixed `back` offset in Z for a 3/4
+  // chase view — but as the Z channel tightens, player.z + back can push
+  // the camera past the front wall entirely, staring through/into it and
+  // hiding the player. Clamp against the live channel so the camera always
+  // stays a safe margin inside it, whatever the player is doing.
+  const bz = boundsZAt(player.distance);
+  const camMargin = 0.7;
+  const targetZ = THREE.MathUtils.clamp(player.z + back, bz.back + camMargin, bz.front - camMargin);
 
   camera.position.x += (targetX - camera.position.x) * Math.min(1, dt * 8);
   camera.position.y += (targetY - camera.position.y) * Math.min(1, dt * 8);
@@ -1260,6 +1328,14 @@ function updateCamera(dt, t) {
   // than being left behind as the fall goes on forever.
   skylineGroup.position.y = -player.distance;
   sunSprite.position.y = -player.distance + 40;
+
+  // Speed streak strength — a plain speed readout wouldn't feel fast; the
+  // screen itself needs to visibly stretch toward the vanishing point.
+  const speedNorm = THREE.MathUtils.clamp((currentSpeed - BASE_SPEED) / (MAX_SPEED - BASE_SPEED), 0, 1);
+  let streak = speedNorm * 0.028;
+  if (diving) streak += 0.05;
+  if (boosting) streak += 0.035;
+  speedStreakPass.uniforms.uStrength.value = THREE.MathUtils.lerp(speedStreakPass.uniforms.uStrength.value, streak, Math.min(1, dt * 6));
 }
 
 function updateTrailParticles(dt) {
