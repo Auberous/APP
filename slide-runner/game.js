@@ -67,9 +67,9 @@ const MIN_HALF_DEPTH = 1.4;         // tightest Z (toward/away) channel — gent
 const MAX_HALF_DEPTH = 3.4;
 const Z_DIFFICULTY_DISTANCE = 1100; // distance over which the Z channel gradually tightens
 
-const POWERUP_TYPES = ['boost', 'shrink', 'reverse'];
-const POWERUP_COLORS = { boost: 0xffd23f, shrink: 0x33f9ff, reverse: 0xff2fd0 };
-const POWERUP_DURATIONS = { boost: 1.0, shrink: 3.0, reverse: 0.5 };
+const POWERUP_TYPES = ['boost', 'shrink'];
+const POWERUP_COLORS = { boost: 0xffd23f, shrink: 0x33f9ff };
+const POWERUP_DURATIONS = { boost: 1.0, shrink: 3.0 };
 
 const BEST_KEY = 'slideRunnerBest';
 
@@ -480,6 +480,7 @@ let diveBlend = 0; // eased 0 (arch pose) -> 1 (tuck), see updatePlayer
 // ---------------------------------------------------------------------------
 // DOM references
 // ---------------------------------------------------------------------------
+const edgeWarningEl = document.getElementById('edge-warning');
 const hud = document.getElementById('hud');
 const controls = document.getElementById('controls');
 const scoreEl = document.getElementById('score');
@@ -903,7 +904,7 @@ function genPowerUpCorridor(prev, x0) {
 // side for a breather between denser stretches.
 function genOpenSky(prev, x0) {
   const span = 16 + Math.random() * 10;
-  const hh = MAX_HALF_HEIGHT * 1.7;
+  const hh = MAX_HALF_HEIGHT * 1.3;
   addKeypoint(x0, pathCenterX(x0), hh);
   addKeypoint(x0 + span, pathCenterX(x0 + span), hh);
   openZones.push({ start: x0 - 2, end: x0 + span + 2 });
@@ -1043,7 +1044,7 @@ function openZoneBlend(x) {
 function zHalfDepthAt(x) {
   const factor = THREE.MathUtils.clamp(x / Z_DIFFICULTY_DISTANCE, 0, 1);
   const normal = THREE.MathUtils.lerp(MAX_HALF_DEPTH, MIN_HALF_DEPTH, factor);
-  return THREE.MathUtils.lerp(normal, MAX_HALF_DEPTH * 1.7, openZoneBlend(x));
+  return THREE.MathUtils.lerp(normal, MAX_HALF_DEPTH * 1.3, openZoneBlend(x));
 }
 function boundsZAt(x) {
   const halfDepth = zHalfDepthAt(x);
@@ -1070,8 +1071,8 @@ function resetWorld() {
   // learn the steering before the normal channel width (and its
   // MAX_HALF_HEIGHT ceiling) tapers in. Anchored to pathCenterX so the
   // very first stretch is already continuous with the winding path.
-  addKeypoint(-4, pathCenterX(-4), MAX_HALF_HEIGHT * 1.9);
-  addKeypoint(13, pathCenterX(13), MAX_HALF_HEIGHT * 1.4);
+  addKeypoint(-4, pathCenterX(-4), MAX_HALF_HEIGHT * 1.4);
+  addKeypoint(13, pathCenterX(13), MAX_HALF_HEIGHT * 1.15);
   generationFrontier = 13;
 
   player.distance = 0;
@@ -1150,7 +1151,7 @@ function handleInput(dt) {
 }
 
 function isInvincible() {
-  return player.activePowerUps.some((p) => p.type === 'boost' || p.type === 'reverse');
+  return player.activePowerUps.some((p) => p.type === 'boost');
 }
 
 function updatePlayer(dt, t) {
@@ -1161,12 +1162,10 @@ function updatePlayer(dt, t) {
   player.y = THREE.MathUtils.clamp(player.y, -MAX_HALF_HEIGHT - 1, MAX_HALF_HEIGHT + 1);
   player.z = THREE.MathUtils.clamp(player.z, -MAX_HALF_DEPTH - 1, MAX_HALF_DEPTH + 1);
 
-  const reversing = player.activePowerUps.some((p) => p.type === 'reverse');
   const boosting = player.activePowerUps.some((p) => p.type === 'boost');
   let speed = currentSpeed;
   if (boosting) speed *= 1.5;
   if (diving) speed *= DIVE_SPEED_MULT;
-  if (reversing) speed = -currentSpeed * 3.2; // brief chaotic backward zoom (upward zoom, here)
 
   player.distance = Math.max(0, player.distance + speed * dt);
 
@@ -1174,11 +1173,11 @@ function updatePlayer(dt, t) {
   playerMesh.scale.setScalar(player.radius / PLAYER_RADIUS_BASE);
   updatePlayerPose(t, diveBlend);
   playerLight.position.set(player.y, -player.distance + 1.5, player.z);
-  playerLight.color.setHex(boosting ? 0xffd23f : reversing ? 0xff2fd0 : diving ? 0xff5a3c : 0x66e0ff);
+  playerLight.color.setHex(boosting ? 0xffd23f : diving ? 0xff5a3c : 0x66e0ff);
 
   // Trail
   trailAccum += dt;
-  const trailColor = boosting ? 0xffd23f : reversing ? 0xff2fd0 : diving ? 0xff5a3c : (player.radius < PLAYER_RADIUS_BASE ? 0x33f9ff : 0x66e0ff);
+  const trailColor = boosting ? 0xffd23f : diving ? 0xff5a3c : (player.radius < PLAYER_RADIUS_BASE ? 0x33f9ff : 0x66e0ff);
   if (trailAccum > (diving ? 0.012 : 0.02)) {
     trailAccum = 0;
     emitTrail(player.y, -player.distance + 0.2, player.z, trailColor);
@@ -1221,7 +1220,6 @@ function updatePowerUps(dt) {
 function bannerText(type) {
   if (type === 'boost') return '\u26A1 BOOST';
   if (type === 'shrink') return '\u25CF SHRINK';
-  if (type === 'reverse') return '\u25C6 REVERSE CHAOS';
   return '';
 }
 
@@ -1361,9 +1359,9 @@ function updateCamera(dt, t) {
   const camMargin = 0.7;
   const targetZ = THREE.MathUtils.clamp(player.z + back, bz.back + camMargin, bz.front - camMargin);
 
-  camera.position.x += (targetX - camera.position.x) * Math.min(1, dt * 8);
+  camera.position.x += (targetX - camera.position.x) * Math.min(1, dt * 12);
   camera.position.y += (targetY - camera.position.y) * Math.min(1, dt * 8);
-  camera.position.z += (targetZ - camera.position.z) * Math.min(1, dt * 8);
+  camera.position.z += (targetZ - camera.position.z) * Math.min(1, dt * 12);
 
   if (shakeTime > 0) {
     shakeTime -= dt;
@@ -1389,6 +1387,19 @@ function updateCamera(dt, t) {
   // than being left behind as the fall goes on forever.
   skylineGroup.position.y = -player.distance;
   sunSprite.position.y = -player.distance + 40;
+
+  // Edge-proximity warning — the biggest cause of "suddenly off-screen and
+  // dead" isn't any single hazard, it's not noticing how close you already
+  // are to a wall until you clip it. Measure the real margin to the nearest
+  // of all four walls (X and Z combined) and pulse a screen-edge glow that
+  // ramps up as that margin shrinks, well before contact.
+  const bx = boundsAt(player.distance);
+  const marginX = Math.min(bx.top - (player.y + player.radius), (player.y - player.radius) - bx.bottom);
+  const marginZ = Math.min(bz.front - (player.z + player.radius), (player.z - player.radius) - bz.back);
+  const margin = Math.min(marginX, marginZ);
+  const WARN_DIST = 1.6;
+  const warnStrength = THREE.MathUtils.clamp(1 - margin / WARN_DIST, 0, 1);
+  edgeWarningEl.style.opacity = warnStrength.toFixed(2);
 
   // Speed streak strength — a plain speed readout wouldn't feel fast; the
   // screen itself needs to visibly stretch toward the vanishing point.

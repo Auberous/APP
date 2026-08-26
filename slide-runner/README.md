@@ -3,8 +3,8 @@
 A neon 3D freefall dive through a sci-fi city — steer in every direction
 through a full 4-sided building corridor, hold DIVE to drop faster, one hit
 ends the run. Built from the Slide Runner game design doc: procedurally
-generated building corridors, auto-activating power-ups (Boost / Shrink /
-Reverse), a time-based difficulty curve, and an addictive instant-retry loop.
+generated building corridors, auto-activating power-ups (Boost / Shrink), a
+time-based difficulty curve, and an addictive instant-retry loop.
 
 ## Running it
 
@@ -110,10 +110,19 @@ python3 -m http.server 8000
   it. A speed-based radial motion-streak `ShaderPass` (a handful of samples
   pulled toward screen center, strength driven by `currentSpeed` plus a kick
   for dive/boost) also sells the higher speed visually, not just numerically.
+  Also tightened X/Z camera tracking (faster lerp) and trimmed the widest
+  channel widths (tutorial stretch, `genOpenSky`, and the open-zone Z
+  widening in `zHalfDepthAt`) after feedback that it was too easy to drift
+  off-screen and die without warning; a new screen-edge glow (`#edge-warning`,
+  driven every frame in `updateCamera` from the real margin to the nearest of
+  all four walls) now pulses red as you approach any wall, well before you'd
+  clip it.
 - **Power-ups**: Boost (1s, invincible + speed + FOV widen), Shrink (3s,
-  smaller hitbox), Reverse (0.5s chaotic backward zoom, invincible so the
-  "chaos moment" reads as a thrill rather than a cheap death) — both spawned
-  by generators and guaranteed every 8–12s (5–8s after 30s) via a timer.
+  smaller hitbox) — both spawned by generators and guaranteed every 8–12s
+  (5–8s after 30s) via a timer. An earlier Reverse power-up (a brief chaotic
+  backward zoom) was cut after player feedback that it felt disorienting
+  rather than fun — a "bounce back orb" that punished a hit rather than
+  rewarding it, unlike Boost/Shrink.
 - **Difficulty**: `currentSpeed = baseSpeed + elapsedTime * difficultyFactor`,
   capped at a max speed (diving multiplies past that cap on purpose — it's
   the skill-based way to outrun the passive curve), exactly per the GDD.
