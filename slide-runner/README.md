@@ -110,13 +110,29 @@ python3 -m http.server 8000
   it. A speed-based radial motion-streak `ShaderPass` (a handful of samples
   pulled toward screen center, strength driven by `currentSpeed` plus a kick
   for dive/boost) also sells the higher speed visually, not just numerically.
-  Also tightened X/Z camera tracking (faster lerp) and trimmed the widest
-  channel widths (tutorial stretch, `genOpenSky`, and the open-zone Z
-  widening in `zHalfDepthAt`) after feedback that it was too easy to drift
-  off-screen and die without warning; a new screen-edge glow (`#edge-warning`,
-  driven every frame in `updateCamera` from the real margin to the nearest of
-  all four walls) now pulses red as you approach any wall, well before you'd
-  clip it.
+  Also tightened X/Z camera tracking (faster lerp), and added a screen-edge
+  glow (`#edge-warning`, driven every frame in `updateCamera` from the real
+  margin to the nearest of all four walls) that pulses red as you approach
+  any wall, well before you'd clip it.
+- **The real cause of "off-screen and dead for no reason"**: found by
+  scripting a player that never touches the controls at all — it still died
+  in under a second. The winding path (`pathCenterX`) moves the *collidable
+  channel*, not the player; with no term carrying the player along with it,
+  they held a fixed world position while the channel curved away underneath
+  them, and each X-channel generator also added its own small random walk on
+  top of that drift. `updatePlayer` now auto-follows both centerlines every
+  frame (an exact before/after delta of the center functions, not an
+  integrated slope, so there's no drift error to accumulate over a long run)
+  — steering still moves the player within the channel on top of that
+  baseline, but standing still now means drifting *with* the curve, the way
+  falling down a bend actually reads, rather than being left behind by it.
+  A time-based safety net (`tutorialSafetyBlend`, ~6s at full width easing
+  out over ~5s more) also floors both channels at a generous width and pins
+  the generator-added random walk to the path's own center while it's
+  active, so the first several seconds are genuinely safe to get oriented in
+  — the previous "wide tutorial stretch" was a distance-based head start
+  that, at run speed, lasted under a second before the next generator's
+  normal-width geometry (and the untouched Z axis) took over.
 - **Power-ups**: Boost (1s, invincible + speed + FOV widen), Shrink (3s,
   smaller hitbox) — both spawned by generators and guaranteed every 8–12s
   (5–8s after 30s) via a timer. An earlier Reverse power-up (a brief chaotic

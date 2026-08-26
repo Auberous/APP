@@ -55,8 +55,8 @@ const DIFFICULTY_FACTOR = 0.17;     // currentSpeed = base + elapsed * factor
 const MAX_SPEED = 42;
 
 const PLAYER_RADIUS_BASE = 0.42;
-const PLAYER_VELOCITY_Y = 9.8;      // top lateral drift speed while actively steering
-const DRIFT_ACCEL = 13;             // how fast lateral velocity eases toward its target (steer, or 0 to fall straight) — higher = snappier, easier to control
+const PLAYER_VELOCITY_Y = 8.6;      // top lateral drift speed while actively steering
+const DRIFT_ACCEL = 10;             // how fast lateral velocity eases toward its target (steer, or 0 to fall straight) — higher = snappier, easier to control
 const DIVE_SPEED_MULT = 2.1;        // fall-speed multiplier while diving
 const DIVE_STEER_FACTOR = 0.55;     // steering authority while diving (tucked = harder to correct)
 
@@ -464,7 +464,7 @@ let shakeStrength = 0;
 // Brief pause before gravity/collisions kick in after a (re)start — without
 // it, real-world input latency between the "Start" tap and the player's
 // first hold can kill them before they've had a chance to react.
-const START_GRACE = 0.4;
+const START_GRACE = 1.0;
 let startGrace = 0;
 
 // Input: 2D steering (eases toward straight when released — see
@@ -928,7 +928,16 @@ function pathCenterXSlope(x) {
 function clampCenter(y, halfHeight, x) {
   const limit = MAX_HALF_HEIGHT - halfHeight + 0.5;
   const center = pathCenterX(x);
-  return THREE.MathUtils.clamp(y, center - limit, center + limit);
+  const clamped = THREE.MathUtils.clamp(y, center - limit, center + limit);
+  // During the tutorial safety window, generators normally still add their
+  // own per-segment random walk on top of the path center (clamped, but
+  // still real drift) — exactly the kind of extra motion a brand-new player
+  // can't yet anticipate. Pin the channel to the path's own center (which
+  // the player auto-follows, see updatePlayer) while safety is high, and
+  // ease the random walk back in as it fades, rather than fighting it from
+  // the very first segment.
+  const safety = tutorialSafetyBlend();
+  return safety > 0 ? THREE.MathUtils.lerp(clamped, center, safety) : clamped;
 }
 function rand(a, b) { return a + Math.random() * (b - a); }
 function lerp(a, b, t) { return a + (b - a) * t; }
@@ -1008,6 +1017,23 @@ function despawnBehind() {
   openZones = openZones.filter((z) => z.end >= cutoff);
 }
 
+// A real, time-based safety net, independent of whatever generator or zone
+// happens to be active on either axis. The previous "wide tutorial stretch"
+// was only a distance-based head start (a couple of keypoints on the X axis
+// alone) — at run speed that's under a second before the next generator's
+// normal-width geometry takes over, and the Z (front/back) axis never had
+// any equivalent widening at all, so a single sustained steering input could
+// cross its full width in well under a second with nothing protecting a
+// brand-new player. This instead floors BOTH axes' collidable half-width at
+// a generous value for several real seconds, fading back out smoothly, no
+// matter what the underlying geometry says.
+const TUTORIAL_SAFE_HOLD = 6; // seconds of full safety after run start
+const TUTORIAL_SAFE_FADE = 5; // seconds to ease back to normal after that
+function tutorialSafetyBlend() {
+  if (elapsedTime <= TUTORIAL_SAFE_HOLD) return 1;
+  return THREE.MathUtils.clamp(1 - (elapsedTime - TUTORIAL_SAFE_HOLD) / TUTORIAL_SAFE_FADE, 0, 1);
+}
+
 // Interpolated tunnel bounds at a given forward distance.
 function boundsAt(x) {
   for (let i = 1; i < keypoints.length; i++) {
@@ -1015,7 +1041,9 @@ function boundsAt(x) {
     if (x <= b.x || i === keypoints.length - 1) {
       const t = b.x > a.x ? THREE.MathUtils.clamp((x - a.x) / (b.x - a.x), 0, 1) : 0;
       const centerY = lerp(a.centerY, b.centerY, t);
-      const halfHeight = lerp(a.halfHeight, b.halfHeight, t);
+      let halfHeight = lerp(a.halfHeight, b.halfHeight, t);
+      const safety = tutorialSafetyBlend();
+      if (safety > 0) halfHeight = THREE.MathUtils.lerp(halfHeight, Math.max(halfHeight, MAX_HALF_HEIGHT * 1.6), safety);
       return { top: centerY + halfHeight, bottom: centerY - halfHeight };
     }
   }
@@ -1044,12 +1072,19 @@ function openZoneBlend(x) {
 function zHalfDepthAt(x) {
   const factor = THREE.MathUtils.clamp(x / Z_DIFFICULTY_DISTANCE, 0, 1);
   const normal = THREE.MathUtils.lerp(MAX_HALF_DEPTH, MIN_HALF_DEPTH, factor);
-  return THREE.MathUtils.lerp(normal, MAX_HALF_DEPTH * 1.3, openZoneBlend(x));
+  let halfDepth = THREE.MathUtils.lerp(normal, MAX_HALF_DEPTH * 1.5, openZoneBlend(x));
+  const safety = tutorialSafetyBlend();
+  if (safety > 0) halfDepth = THREE.MathUtils.lerp(halfDepth, Math.max(halfDepth, MAX_HALF_DEPTH * 1.6), safety);
+  return halfDepth;
+}
+function zCenterAt(x) {
+  const halfDepth = zHalfDepthAt(x);
+  const room = MAX_HALF_DEPTH - halfDepth + 0.5;
+  return Math.sin(x * 0.09) * room * 0.65 + Math.sin(x * 0.027 + 1.7) * room * 0.35;
 }
 function boundsZAt(x) {
   const halfDepth = zHalfDepthAt(x);
-  const room = MAX_HALF_DEPTH - halfDepth + 0.5;
-  const centerZ = Math.sin(x * 0.09) * room * 0.65 + Math.sin(x * 0.027 + 1.7) * room * 0.35;
+  const centerZ = zCenterAt(x);
   return { front: centerZ + halfDepth, back: centerZ - halfDepth };
 }
 
@@ -1155,19 +1190,40 @@ function isInvincible() {
 }
 
 function updatePlayer(dt, t) {
-  player.y += player.velocityY * dt;
-  player.z += player.velocityZ * dt;
-  // Soft clamp to a generous absolute range so a boosted phase-through never
-  // sends the player wildly off-screen.
-  player.y = THREE.MathUtils.clamp(player.y, -MAX_HALF_HEIGHT - 1, MAX_HALF_HEIGHT + 1);
-  player.z = THREE.MathUtils.clamp(player.z, -MAX_HALF_DEPTH - 1, MAX_HALF_DEPTH + 1);
-
   const boosting = player.activePowerUps.some((p) => p.type === 'boost');
   let speed = currentSpeed;
   if (boosting) speed *= 1.5;
   if (diving) speed *= DIVE_SPEED_MULT;
 
-  player.distance = Math.max(0, player.distance + speed * dt);
+  // Auto-follow the winding path's drift (X) and the Z centerline's drift —
+  // a player who isn't actively steering needs to flow WITH the curve,
+  // matching what the camera and city geometry already do, rather than
+  // holding a fixed world position while the channel curves out from under
+  // them. This was a real bug, not a tuning issue: with no follow term, a
+  // player who never touches the controls dies passively as soon as the
+  // path's wander exceeds the channel's half-width, because the channel is
+  // defined around the moving path/curve, not around wherever the player
+  // happens to be sitting. Computed as an exact before/after delta of the
+  // center functions (not an integrated slope) so there's zero drift error
+  // to accumulate over a long run — a passive player's world Y/Z stay
+  // exactly on the moving centerline forever. Active steering (velocityY/Z)
+  // still moves the player within the channel on top of this.
+  const prevDistance = player.distance;
+  const nextDistance = Math.max(0, prevDistance + speed * dt);
+  const centerYDelta = pathCenterX(nextDistance) - pathCenterX(prevDistance);
+  const centerZDelta = zCenterAt(nextDistance) - zCenterAt(prevDistance);
+  player.y += player.velocityY * dt + centerYDelta;
+  player.z += player.velocityZ * dt + centerZDelta;
+  player.distance = nextDistance;
+
+  // Soft clamp to a generous range around the current channel center (not a
+  // fixed absolute range — the channel itself wanders with the path) so a
+  // boosted phase-through never sends the player wildly off wherever the
+  // tunnel currently curves to.
+  const clampCenterY = pathCenterX(player.distance);
+  const clampCenterZ = zCenterAt(player.distance);
+  player.y = THREE.MathUtils.clamp(player.y, clampCenterY - MAX_HALF_HEIGHT - 1, clampCenterY + MAX_HALF_HEIGHT + 1);
+  player.z = THREE.MathUtils.clamp(player.z, clampCenterZ - MAX_HALF_DEPTH - 1, clampCenterZ + MAX_HALF_DEPTH + 1);
 
   playerMesh.position.set(player.y, -player.distance, player.z);
   playerMesh.scale.setScalar(player.radius / PLAYER_RADIUS_BASE);
