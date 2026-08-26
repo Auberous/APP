@@ -180,7 +180,13 @@ let state = gameState.READY;
 let elapsedTime = 0;       // seconds since run start
 let currentSpeed = BASE_SPEED;
 let clock = new THREE.Clock();
-let best = Number(localStorage.getItem(BEST_KEY) || 0);
+function loadBest() {
+  try { return Number(localStorage.getItem(BEST_KEY) || 0); } catch { return 0; }
+}
+function saveBest(v) {
+  try { localStorage.setItem(BEST_KEY, String(v)); } catch { /* private mode / storage disabled — best just won't persist */ }
+}
+let best = loadBest();
 
 // Tunnel keypoints: { x, centerY, halfHeight }
 let keypoints = [];
@@ -565,7 +571,7 @@ function die() {
   const isNewBest = dist > best;
   if (isNewBest) {
     best = dist;
-    localStorage.setItem(BEST_KEY, String(best));
+    saveBest(best);
   }
 
   finalScoreEl.textContent = dist;
@@ -653,9 +659,9 @@ function updatePowerUps(dt) {
 }
 
 function bannerText(type) {
-  if (type === 'boost') return '⚡ BOOST';
-  if (type === 'shrink') return '● SHRINK';
-  if (type === 'reverse') return '◆ REVERSE CHAOS';
+  if (type === 'boost') return '\u26A1 BOOST';
+  if (type === 'shrink') return '\u25CF SHRINK';
+  if (type === 'reverse') return '\u25C6 REVERSE CHAOS';
   return '';
 }
 
