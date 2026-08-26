@@ -46,19 +46,33 @@ python3 -m http.server 8000
   `halfHeight` internally — they map to the left/right building faces, not
   a floor/ceiling); segment generators (`genWideOpen`, `genTightSqueeze`,
   `genZigZag`, `genMovingWalls`, `genRotatingBlades`, `genPulsingRings`,
-  `genFlyingCars`, `genPerfectLane`, `genPowerUpCorridor`) are picked with
-  time-weighted odds matching the GDD's hazard-density curve (wide →
-  squeezes → moving walls → blades/traffic → rings). The Z (toward/away)
-  channel is a real, independently-collidable second axis (`boundsZAt`) —
-  a pure function of progress rather than generated keypoints, since it only
-  needs to wander and gradually tighten rather than carry the same hazard
-  variety as X — with its own front/back building walls built from the same
-  function, so what you see always matches what can hit you. All of this
-  generation/physics/collision code is written in terms of abstract
-  "progress" and "bounded position" — only the rendering code at the bottom
-  maps those onto world X/Y/Z, which is what makes this a vertical shaft
-  rather than the horizontal tunnel it started as (see the
+  `genFlyingCars`, `genOpenSky`, `genPerfectLane`, `genPowerUpCorridor`) are
+  picked with time-weighted odds matching the GDD's hazard-density curve
+  (wide → squeezes → moving walls → blades/traffic → rings). The Z
+  (toward/away) channel is a real, independently-collidable second axis
+  (`boundsZAt`) — a pure function of progress rather than generated
+  keypoints, since it only needs to wander and gradually tighten rather than
+  carry the same hazard variety as X — with its own front/back building
+  walls built from the same function, so what you see always matches what
+  can hit you. All of this generation/physics/collision code is written in
+  terms of abstract "progress" and "bounded position" — only the rendering
+  code at the bottom maps those onto world X/Y/Z, which is what makes this a
+  vertical shaft rather than the horizontal tunnel it started as (see the
   coordinate-convention comment at the top of `game.js`).
+- **The path itself winds**: `pathCenterX` (two layered sine waves) defines
+  a slowly curving centerline for the whole shaft; every X-channel
+  generator clamps its wander around that moving center (`clampCenter`) —
+  and the tutorial keypoints and `genOpenSky` anchor to it too — instead of
+  a fixed 0, so the tunnel visibly curves left/right as it falls rather than
+  just dropping straight down with local wobbles. `updateCamera` reads
+  `pathCenterXSlope` (the curve's analytic derivative) each frame and banks
+  the camera into it via `camera.rotateZ` — applied fresh on top of the
+  lookAt orientation every frame (never accumulated), so it's a stable,
+  controllable lean rather than drift. `genOpenSky` randomly (weighted into
+  every difficulty band) opens the environment into wide-open sky for a
+  span — no near hazards, a much wider X channel, and (via `openZones`,
+  consulted by `zHalfDepthAt`) a much wider Z channel too — as a breather
+  between denser stretches.
 - **Player**: a small low-poly figure jointed at the shoulders, elbows, hips
   and knees (not a rigid mesh), in a skydive arch pose by default — idle
   wind-flutter on the limbs, a bank/lean when steering left/right, a pitch
@@ -103,9 +117,14 @@ python3 -m http.server 8000
 - **Difficulty**: `currentSpeed = baseSpeed + elapsedTime * difficultyFactor`,
   capped at a max speed (diving multiplies past that cap on purpose — it's
   the skill-based way to outrun the passive curve), exactly per the GDD.
-  Base/max speed and the difficulty ramp all run noticeably faster than the
+  Base/max speed and the difficulty ramp run noticeably faster than the
   original tuning for a punchier feel; the world-generation lookahead was
-  extended to match so nothing pops in at the higher speed.
+  extended to match so nothing pops in at the higher speed. The first ~12s
+  of every run is deliberately hazard-free (just the wide, fast, curving
+  shaft) — the adrenaline hook is meant to come from speed and the winding
+  path, not from dying immediately — and flying cars, the busiest hazard to
+  react to, don't enter the generator mix at all until well into the run
+  (~55s), rather than greeting a brand-new player.
 - **Feel**: a brief post-(re)start grace period suppresses death judgment
   (not input) so real-world input latency after tapping "Start" can't kill
   you before you've had a chance to react; a generously wide tutorial

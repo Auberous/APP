@@ -449,6 +449,7 @@ let best = loadBest();
 let keypoints = [];
 let wallMeshes = [];        // { mesh, x1, x2 } for despawn tracking
 let generationFrontier = 0;
+let openZones = [];         // { start, end } progress-x ranges where genOpenSky widened the Z channel
 
 // Hazards & powerups currently in the world
 let hazards = [];   // { x, y, width, height, type, rotationSpeed, moveAmplitude, moveSpeed, mesh, phase }
@@ -780,7 +781,7 @@ function spawnPowerUp(x, y, type) {
 function genWideOpen(prev, x0) {
   const span = 10 + Math.random() * 6;
   const halfHeight = MAX_HALF_HEIGHT * (0.75 + Math.random() * 0.25);
-  const centerY = clampCenter(prev.centerY + rand(-1, 1), halfHeight);
+  const centerY = clampCenter(prev.centerY + rand(-1, 1), halfHeight, x0);
   addKeypoint(x0, centerY, halfHeight);
   addKeypoint(x0 + span, centerY, halfHeight);
   return x0 + span;
@@ -799,7 +800,7 @@ function genTightSqueeze(prev, x0) {
   let centerY = prev.centerY;
   for (let i = 0; i < steps; i++) {
     x += KEYPOINT_SPACING * 1.2;
-    centerY = clampCenter(centerY + rand(-1.6, 1.6), MIN_HALF_HEIGHT);
+    centerY = clampCenter(centerY + rand(-1.6, 1.6), MIN_HALF_HEIGHT, x);
     const hh = lerp(MIN_HALF_HEIGHT, MIN_HALF_HEIGHT + 0.4, Math.random());
     addKeypoint(x, centerY, hh, 'alt');
   }
@@ -814,7 +815,7 @@ function genZigZag(prev, x0) {
   const hh = 1.6;
   for (let i = 0; i < steps; i++) {
     x += KEYPOINT_SPACING * 0.85;
-    centerY = clampCenter(centerY + dir * rand(1.6, 2.4), hh);
+    centerY = clampCenter(centerY + dir * rand(1.6, 2.4), hh, x);
     dir *= -1;
     addKeypoint(x, centerY, hh, 'alt');
   }
@@ -826,7 +827,7 @@ function genRotatingBlades(prev, x0) {
   const hh = 2.6;
   let x = x0;
   addKeypoint(x, prev.centerY, hh);
-  const centerY = clampCenter(prev.centerY, hh);
+  const centerY = clampCenter(prev.centerY, hh, x0);
   for (let i = 0; i < count; i++) {
     x += 5 + Math.random() * 2.5;
     spawnHazard({
@@ -847,7 +848,7 @@ function genMovingWalls(prev, x0) {
   const freq = 0.5 + Math.random() * 0.4;
   for (let i = 0; i < steps; i++) {
     x += KEYPOINT_SPACING * 0.9;
-    centerY = clampCenter(Math.sin((x - x0) * freq) * amp, hh);
+    centerY = clampCenter(pathCenterX(x) + Math.sin((x - x0) * freq) * amp, hh, x);
     addKeypoint(x, centerY, hh, 'alt');
   }
   return x;
@@ -860,7 +861,7 @@ function genPulsingRings(prev, x0) {
   addKeypoint(x, prev.centerY, hh);
   for (let i = 0; i < count; i++) {
     x += 6 + Math.random() * 2;
-    const holeY = clampCenter(prev.centerY + rand(-1.6, 1.6), hh);
+    const holeY = clampCenter(prev.centerY + rand(-1.6, 1.6), hh, x);
     spawnHazard({ x, y: 0, width: 0.5, height: 0, type: 'gate', holeY, holeRadius: 1.05 });
   }
   addKeypoint(x + 4, prev.centerY, hh);
@@ -872,7 +873,7 @@ function genFlyingCars(prev, x0) {
   const hh = 2.8;
   let x = x0;
   addKeypoint(x, prev.centerY, hh);
-  const centerY = clampCenter(prev.centerY, hh);
+  const centerY = clampCenter(prev.centerY, hh, x0);
   for (let i = 0; i < count; i++) {
     x += 3.2 + Math.random() * 2;
     const amplitude = hh * (0.5 + Math.random() * 0.4);
@@ -896,9 +897,37 @@ function genPowerUpCorridor(prev, x0) {
   return x0 + span;
 }
 
-function clampCenter(y, halfHeight) {
+// The environment randomly opens up into wide-open sky — no near hazards,
+// a much wider X channel, and (via openZones, consulted by zHalfDepthAt)
+// a much wider Z channel too, so the buildings recede far away on every
+// side for a breather between denser stretches.
+function genOpenSky(prev, x0) {
+  const span = 16 + Math.random() * 10;
+  const hh = MAX_HALF_HEIGHT * 1.7;
+  addKeypoint(x0, pathCenterX(x0), hh);
+  addKeypoint(x0 + span, pathCenterX(x0 + span), hh);
+  openZones.push({ start: x0 - 2, end: x0 + span + 2 });
+  return x0 + span;
+}
+
+// The whole shaft winds slowly left/right as it falls — two layered sine
+// waves (a broad sweep plus a slower drift) rather than a straight drop.
+// Every X-channel generator clamps its wander around this moving center
+// (see clampCenter) instead of a fixed 0, so the *tunnel itself* curves;
+// the camera then banks into that curve (see updateCamera) for the payoff.
+const PATH_AMP_1 = 4.5, PATH_FREQ_1 = 0.02;
+const PATH_AMP_2 = 3.0, PATH_FREQ_2 = 0.0055, PATH_PHASE_2 = 2.3;
+function pathCenterX(x) {
+  return Math.sin(x * PATH_FREQ_1) * PATH_AMP_1 + Math.sin(x * PATH_FREQ_2 + PATH_PHASE_2) * PATH_AMP_2;
+}
+function pathCenterXSlope(x) {
+  return PATH_AMP_1 * PATH_FREQ_1 * Math.cos(x * PATH_FREQ_1) + PATH_AMP_2 * PATH_FREQ_2 * Math.cos(x * PATH_FREQ_2 + PATH_PHASE_2);
+}
+
+function clampCenter(y, halfHeight, x) {
   const limit = MAX_HALF_HEIGHT - halfHeight + 0.5;
-  return THREE.MathUtils.clamp(y, -limit, limit);
+  const center = pathCenterX(x);
+  return THREE.MathUtils.clamp(y, center - limit, center + limit);
 }
 function rand(a, b) { return a + Math.random() * (b - a); }
 function lerp(a, b, t) { return a + (b - a) * t; }
@@ -908,34 +937,37 @@ function pickGenerator(t) {
   const table = [];
   const push = (fn, w) => table.push({ fn, w });
 
-  push(genPerfectLane, 1.2);
+  push(genPerfectLane, 1.1);
   push(genPowerUpCorridor, 0.9);
+  push(genOpenSky, 1.1); // the environment randomly opens up at any point in the run
 
-  if (t < 10) {
-    push(genWideOpen, 4);
-    push(genFlyingCars, 1.6);
-  } else if (t < 20) {
-    push(genWideOpen, 1.5);
-    push(genTightSqueeze, 3);
-    push(genFlyingCars, 2.2);
-  } else if (t < 30) {
+  // Early game is a pure adrenaline hook, not an obstacle course: fast,
+  // curving, hazard-free flow first, so the thrill comes from speed and
+  // the winding path rather than dying immediately. Flying cars (visually
+  // busy, need the most reaction time) are held back until well into the
+  // run rather than greeting a brand-new player.
+  if (t < 12) {
+    push(genWideOpen, 4.5);
+  } else if (t < 24) {
+    push(genWideOpen, 2);
+    push(genTightSqueeze, 2);
+  } else if (t < 38) {
     push(genWideOpen, 1);
-    push(genTightSqueeze, 1.5);
-    push(genMovingWalls, 3);
+    push(genTightSqueeze, 2);
+    push(genMovingWalls, 2.5);
     push(genZigZag, 1.5);
-    push(genFlyingCars, 2.8);
-  } else if (t < 45) {
+  } else if (t < 55) {
     push(genTightSqueeze, 1.5);
     push(genMovingWalls, 1.5);
     push(genZigZag, 1.5);
-    push(genRotatingBlades, 3);
-    push(genFlyingCars, 2.8);
+    push(genRotatingBlades, 2.5);
+    push(genFlyingCars, 1.8); // cars finally enter the mix
   } else {
     push(genMovingWalls, 1.2);
     push(genRotatingBlades, 2.5);
     push(genZigZag, 1.5);
     push(genPulsingRings, 2.5);
-    push(genFlyingCars, 3.2);
+    push(genFlyingCars, 3.0);
   }
 
   const total = table.reduce((s, e) => s + e.w, 0);
@@ -971,6 +1003,8 @@ function despawnBehind() {
     if (p.x < cutoff) { disposeMesh(p.mesh); return false; }
     return true;
   });
+
+  openZones = openZones.filter((z) => z.end >= cutoff);
 }
 
 // Interpolated tunnel bounds at a given forward distance.
@@ -992,9 +1026,24 @@ function boundsAt(x) {
 // gradually tighten, not carry the same hazard variety as the X axis. Used
 // for both collision (checkCollisions) and the front/back wall geometry
 // (addKeypoint), so the two always agree exactly.
+// 0..1: how "open sky" x currently is, with a soft blend at zone edges so
+// the channel widens/narrows smoothly rather than snapping.
+function openZoneBlend(x) {
+  const EDGE = 6;
+  let best = 0;
+  for (const z of openZones) {
+    if (x >= z.start && x <= z.end) return 1;
+    if (x < z.start - EDGE || x > z.end + EDGE) continue;
+    const t = x < z.start ? (x - (z.start - EDGE)) / EDGE : ((z.end + EDGE) - x) / EDGE;
+    best = Math.max(best, THREE.MathUtils.clamp(t, 0, 1));
+  }
+  return best;
+}
+
 function zHalfDepthAt(x) {
   const factor = THREE.MathUtils.clamp(x / Z_DIFFICULTY_DISTANCE, 0, 1);
-  return THREE.MathUtils.lerp(MAX_HALF_DEPTH, MIN_HALF_DEPTH, factor);
+  const normal = THREE.MathUtils.lerp(MAX_HALF_DEPTH, MIN_HALF_DEPTH, factor);
+  return THREE.MathUtils.lerp(normal, MAX_HALF_DEPTH * 1.7, openZoneBlend(x));
 }
 function boundsZAt(x) {
   const halfDepth = zHalfDepthAt(x);
@@ -1015,12 +1064,14 @@ function resetWorld() {
   powerUps.forEach((p) => disposeMesh(p.mesh));
   powerUps = [];
   generationFrontier = 0;
+  openZones = [];
 
   // A generously wide tutorial stretch — new players need real runway to
-  // learn the hold/release rhythm before the normal channel width (and its
-  // MAX_HALF_HEIGHT ceiling) tapers in.
-  addKeypoint(-4, 0, MAX_HALF_HEIGHT * 1.9);
-  addKeypoint(13, 0, MAX_HALF_HEIGHT * 1.4);
+  // learn the steering before the normal channel width (and its
+  // MAX_HALF_HEIGHT ceiling) tapers in. Anchored to pathCenterX so the
+  // very first stretch is already continuous with the winding path.
+  addKeypoint(-4, pathCenterX(-4), MAX_HALF_HEIGHT * 1.9);
+  addKeypoint(13, pathCenterX(13), MAX_HALF_HEIGHT * 1.4);
   generationFrontier = 13;
 
   player.distance = 0;
@@ -1159,7 +1210,7 @@ function updatePowerUps(dt) {
   // through long non-corridor stretches.
   if (elapsedTime > nextPowerUpAt) {
     const b = boundsAt(player.distance + 18);
-    const y = clampCenter((b.top + b.bottom) / 2, 0.6);
+    const y = clampCenter((b.top + b.bottom) / 2, 0.6, player.distance + 18);
     const type = POWERUP_TYPES[Math.floor(Math.random() * POWERUP_TYPES.length)];
     spawnPowerUp(player.distance + 18, y, type);
     const interval = elapsedTime > 30 ? rand(5, 8) : rand(8, 12);
@@ -1322,6 +1373,16 @@ function updateCamera(dt, t) {
   }
 
   camera.lookAt(player.y, -player.distance - 6, player.z);
+
+  // Bank into the winding path's current curvature — a stable up vector
+  // (see camera.up above) means lookAt() alone gives zero roll, so the
+  // "you're being pulled through a curve" feeling has to be added on
+  // purpose. rotateZ applies once on top of the fresh lookAt orientation
+  // each frame (lookAt resets the quaternion first), so this never
+  // accumulates across frames.
+  const slope = pathCenterXSlope(player.distance);
+  const bankRoll = THREE.MathUtils.clamp(-slope * 3.2, -0.4, 0.4);
+  camera.rotateZ(bankRoll);
 
   // Keep the distant skyline (and the sun glow) centered on the player's
   // fall depth so they read as an endless city and a fixed sky, rather
