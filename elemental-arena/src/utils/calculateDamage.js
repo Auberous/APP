@@ -1,5 +1,5 @@
 export function calculateDamage(ability, target) {
-  if (!ability) return 0;
+  if (!ability || ability.type !== 'attack') return 0;
 
   let damage = ability.damage;
 
