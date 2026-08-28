@@ -19,9 +19,13 @@ function generateCode() {
 
 export function createRoom(teacherId) {
   const code = generateCode();
-  const room = { code, teacherId, players: new Map() };
+  const room = { code, teacherId, players: new Map(), match: null };
   rooms.set(code, room);
   return room;
+}
+
+export function getAllRooms() {
+  return rooms.values();
 }
 
 export function getRoom(code) {

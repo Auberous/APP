@@ -3,10 +3,20 @@ import express from 'express';
 import cors from 'cors';
 import { Server } from 'socket.io';
 
-import { createRoom, getRoom, joinRoom, removePlayer, removeRoomByTeacher, roomPlayerList } from './rooms.js';
+import {
+  createRoom,
+  getRoom,
+  joinRoom,
+  removePlayer,
+  removeRoomByTeacher,
+  roomPlayerList,
+  getAllRooms,
+} from './rooms.js';
+import { Match } from './game/match.js';
 
 const PORT = process.env.PORT || 3001;
 const CLIENT_ORIGIN = process.env.CLIENT_ORIGIN || '*';
+const TICK_MS = 50; // 20Hz
 
 const app = express();
 app.use(cors({ origin: CLIENT_ORIGIN }));
@@ -56,8 +66,62 @@ io.on('connection', (socket) => {
       callback?.({ ok: false, error: 'Not your room.' });
       return;
     }
+    room.match?.startBattleNow();
     io.to(code).emit('battle:started');
     callback?.({ ok: true });
+  });
+
+  // --- arena (in-match) events --------------------------------------
+
+  socket.on('arena:enter', (_payload, callback) => {
+    if (socket.data.role !== 'player') {
+      callback?.({ ok: false, error: 'Only players can enter the arena.' });
+      return;
+    }
+    const room = getRoom(socket.data.roomCode);
+    if (!room) {
+      callback?.({ ok: false, error: 'Room no longer exists.' });
+      return;
+    }
+    if (!room.match) room.match = new Match();
+    room.match.addPlayer(socket.id, socket.data.name);
+    callback?.({ ok: true, youId: socket.id, snapshot: room.match.snapshot() });
+  });
+
+  socket.on('arena:input', (input = {}) => {
+    const room = getRoom(socket.data.roomCode);
+    room?.match?.setInput(socket.id, input);
+  });
+
+  socket.on('arena:cast-ability', ({ abilityName } = {}, callback) => {
+    const room = getRoom(socket.data.roomCode);
+    if (!room?.match) {
+      callback?.({ ok: false, error: 'No active match.' });
+      return;
+    }
+    const result = room.match.castAbility(socket.id, abilityName);
+    callback?.(result);
+    if (result.ok && result.effect) {
+      io.to(room.code).emit('arena:effect', { effect: result.effect });
+    }
+  });
+
+  socket.on('arena:shop-buy', ({ abilityName } = {}, callback) => {
+    const room = getRoom(socket.data.roomCode);
+    if (!room?.match) {
+      callback?.({ ok: false, error: 'No active match.' });
+      return;
+    }
+    callback?.(room.match.startShopPurchase(socket.id, abilityName));
+  });
+
+  socket.on('arena:answer', ({ answerIndex } = {}, callback) => {
+    const room = getRoom(socket.data.roomCode);
+    if (!room?.match) {
+      callback?.({ ok: false, error: 'No active match.' });
+      return;
+    }
+    callback?.(room.match.answerQuestion(socket.id, answerIndex));
   });
 
   socket.on('disconnect', () => {
@@ -66,10 +130,27 @@ io.on('connection', (socket) => {
       if (room) io.to(room.code).emit('room:closed');
     } else if (socket.data.role === 'player') {
       const room = removePlayer(socket.id);
+      room?.match?.removePlayer(socket.id);
       if (room) io.to(room.code).emit('room:players-updated', { players: roomPlayerList(room) });
     }
   });
 });
+
+// Single global tick loop drives every room's match. Fine at this scale;
+// if this ever needs to shard across processes, each shard just needs to
+// own a disjoint set of rooms.
+let lastTick = Date.now();
+setInterval(() => {
+  const now = Date.now();
+  const dt = (now - lastTick) / 1000;
+  lastTick = now;
+
+  for (const room of getAllRooms()) {
+    if (!room.match || room.match.phase === 'over') continue;
+    room.match.tick(dt);
+    io.to(room.code).emit('arena:state', room.match.snapshot());
+  }
+}, TICK_MS);
 
 httpServer.listen(PORT, () => {
   console.log(`Elemental Arena server listening on :${PORT}`);

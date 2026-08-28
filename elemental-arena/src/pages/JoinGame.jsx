@@ -1,7 +1,9 @@
 import { useEffect, useState } from 'react';
+import { useNavigate } from 'react-router-dom';
 import { getSocket } from '../net/socket.js';
 
 export default function JoinGame() {
+  const navigate = useNavigate();
   const [gameCode, setGameCode] = useState('');
   const [name, setName] = useState('');
   const [players, setPlayers] = useState([]);
@@ -30,19 +32,20 @@ export default function JoinGame() {
     setStatus('joining');
     setError(null);
     const socket = getSocket();
-    socket.emit(
-      'player:join-room',
-      { code: gameCode.trim().toUpperCase(), name },
-      (res) => {
-        if (res?.ok) {
-          setPlayers(res.players);
-          setStatus('joined');
-        } else {
-          setStatus('error');
-          setError(res?.error || 'Could not join that game.');
-        }
+    const trimmedCode = gameCode.trim().toUpperCase();
+    socket.emit('player:join-room', { code: trimmedCode, name }, (res) => {
+      if (res?.ok) {
+        setPlayers(res.players);
+        setStatus('joined');
+      } else {
+        setStatus('error');
+        setError(res?.error || 'Could not join that game.');
       }
-    );
+    });
+  };
+
+  const handleEnterArena = () => {
+    navigate('/game1', { state: { code: gameCode.trim().toUpperCase(), name } });
   };
 
   if (status === 'joined') {
@@ -50,7 +53,7 @@ export default function JoinGame() {
       <div>
         <h1>You're in!</h1>
         <p>
-          Waiting for the teacher to start — code <strong>{gameCode.toUpperCase()}</strong>
+          Code <strong>{gameCode.toUpperCase()}</strong>
         </p>
         <h3>Players ({players.length})</h3>
         <ul>
@@ -58,6 +61,7 @@ export default function JoinGame() {
             <li key={p.id}>{p.name}</li>
           ))}
         </ul>
+        <button onClick={handleEnterArena}>Enter Arena</button>
       </div>
     );
   }

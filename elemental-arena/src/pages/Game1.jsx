@@ -1,4 +1,5 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
+import { Link, useLocation } from 'react-router-dom';
 
 import GameCanvas from '../components/GameCanvas.jsx';
 import HUD from '../components/HUD.jsx';
@@ -6,206 +7,166 @@ import AbilityBar from '../components/AbilityBar.jsx';
 import QuestionModal from '../components/QuestionModal.jsx';
 import ShopPanel from '../components/ShopPanel.jsx';
 
-import { useGameState } from '../hooks/useGameState.js';
-import { useQuestions } from '../hooks/useQuestions.js';
+import { abilities as ALL_ABILITIES } from '../game/abilities.js';
 import { getShopById, getShopItems } from '../game/shops.js';
-import { LOCAL_PLAYERS } from '../game/players.js';
 import { gameEvents } from '../game/gameEvents.js';
-
-const PREP_DURATION_SECONDS = 60;
+import { getSocket } from '../net/socket.js';
 
 function toHex(color) {
   return `#${color.toString(16).padStart(6, '0')}`;
 }
 
-// One column of the match: a player's HUD, abilities, and whichever of
-// shop/question panel currently applies to them. All the actual state
-// (health, unlocked abilities, current question, shop progress) lives in
-// Game1 and is passed in as props, keyed by player id — see the comment
-// on game/players.js for why this stays list-shaped rather than p1/p2
-// fields.
-function PlayerPanel({ config, gameState, questionState, activeShopId, pending, onBuy, onAnswer, onCast }) {
-  const activeShop = activeShopId ? getShopById(activeShopId) : null;
-  const shopItems = activeShop ? getShopItems(activeShop) : [];
-  const ownedNames = gameState.unlockedAbilities.map((a) => a.name);
-
-  return (
-    <div className="player-panel" style={{ '--player-color': toHex(config.color) }}>
-      <div className="player-panel-label">
-        <span className="player-color-dot" />
-        {config.label}
-        <span style={{ opacity: 0.6, fontWeight: 'normal' }}>
-          ({config.controls === 'wasd' ? 'WASD' : 'Arrow keys'})
-        </span>
-      </div>
-
-      <HUD
-        health={gameState.health}
-        maxHealth={gameState.maxHealth}
-        energy={gameState.energy}
-        maxEnergy={gameState.maxEnergy}
-      />
-
-      <AbilityBar abilities={gameState.unlockedAbilities} energy={gameState.energy} onCast={onCast} />
-
-      {questionState.currentQuestion ? (
-        <QuestionModal
-          question={questionState.currentQuestion.question}
-          answers={questionState.currentQuestion.answers}
-          onAnswer={onAnswer}
-        />
-      ) : (
-        activeShop && (
-          <ShopPanel shop={activeShop} items={shopItems} ownedNames={ownedNames} onBuy={onBuy} />
-        )
-      )}
-
-      {pending && questionState.currentQuestion && (
-        <p style={{ fontSize: 12, opacity: 0.7, margin: 0 }}>
-          Unlocking {pending.item.name}: {pending.progress}/{pending.item.unlockCost} correct
-        </p>
-      )}
-    </div>
-  );
-}
-
 export default function Game1() {
-  const [p1, p2] = LOCAL_PLAYERS;
+  const location = useLocation();
+  const { code, name } = location.state || {};
 
-  const state1 = useGameState();
-  const state2 = useGameState();
-  const questions1 = useQuestions();
-  const questions2 = useQuestions();
+  const [youId, setYouId] = useState(null);
+  const [snapshot, setSnapshot] = useState(null);
+  const [connectError, setConnectError] = useState(null);
 
-  const gameStates = { [p1.id]: state1, [p2.id]: state2 };
-  const questionStates = { [p1.id]: questions1, [p2.id]: questions2 };
+  const [currentQuestion, setCurrentQuestion] = useState(null);
+  const [pending, setPending] = useState(null); // { abilityName, progress, unlockCost }
+  const [lastUnlock, setLastUnlock] = useState(null);
+  const [actionError, setActionError] = useState(null);
+  const [now, setNow] = useState(Date.now());
 
-  const [activeShopId, setActiveShopId] = useState({ [p1.id]: null, [p2.id]: null });
-  const [pendingItem, setPendingItem] = useState({ [p1.id]: null, [p2.id]: null });
-  const [lastUnlock, setLastUnlock] = useState({ [p1.id]: null, [p2.id]: null });
+  const youIdRef = useRef(null);
 
-  const [phase, setPhase] = useState('prep');
-  const [prepSecondsLeft, setPrepSecondsLeft] = useState(PREP_DURATION_SECONDS);
-  const [winnerId, setWinnerId] = useState(null);
-  const [restartKey, setRestartKey] = useState(0);
-
-  // --- world -> rules bridge (see game/gameEvents.js) ---------------------
+  // --- connect to the match, wire up the server <-> React <-> Phaser bridge
   useEffect(() => {
-    const handleDamage = ({ playerId, amount }) => gameStates[playerId]?.takeDamage(amount);
-    const handleShopZone = ({ playerId, shopId }) => {
-      setActiveShopId((prev) => ({ ...prev, [playerId]: shopId }));
-      if (!shopId) {
-        setPendingItem((prev) => ({ ...prev, [playerId]: null }));
-        questionStates[playerId]?.clearQuestion();
-      }
-    };
+    if (!code || !name) return undefined;
 
-    gameEvents.on('player-damaged', handleDamage);
-    gameEvents.on('shop-zone', handleShopZone);
+    const socket = getSocket();
+
+    socket.emit('arena:enter', {}, (res) => {
+      if (!res?.ok) {
+        setConnectError(res?.error || 'Could not enter the arena.');
+        return;
+      }
+      youIdRef.current = res.youId;
+      setYouId(res.youId);
+      setSnapshot(res.snapshot);
+      gameEvents.emit('net:snapshot', { snapshot: res.snapshot, youId: res.youId });
+    });
+
+    const handleState = (nextSnapshot) => {
+      setSnapshot(nextSnapshot);
+      gameEvents.emit('net:snapshot', { snapshot: nextSnapshot, youId: youIdRef.current });
+    };
+    const handleEffect = ({ effect }) => gameEvents.emit('net:effect', { effect });
+    const handleClosed = () => setConnectError('The teacher closed this game.');
+    const handleInputChanged = (input) => socket.emit('arena:input', input);
+
+    socket.on('arena:state', handleState);
+    socket.on('arena:effect', handleEffect);
+    socket.on('room:closed', handleClosed);
+    gameEvents.on('input-changed', handleInputChanged);
+
     return () => {
-      gameEvents.off('player-damaged', handleDamage);
-      gameEvents.off('shop-zone', handleShopZone);
+      socket.off('arena:state', handleState);
+      socket.off('arena:effect', handleEffect);
+      socket.off('room:closed', handleClosed);
+      gameEvents.off('input-changed', handleInputChanged);
     };
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [restartKey]);
+  }, [code, name]);
 
-  // Energy regen for both players.
+  // Recompute the prep countdown display once a second.
   useEffect(() => {
-    const id = setInterval(() => {
-      state1.regenEnergy(0.5);
-      state2.regenEnergy(0.5);
-    }, 500);
+    const id = setInterval(() => setNow(Date.now()), 1000);
     return () => clearInterval(id);
-  }, [state1, state2]);
+  }, []);
 
-  // Keep the scene's on-sprite health bars in sync.
-  useEffect(() => {
-    gameEvents.emit('health-changed', { playerId: p1.id, health: state1.health, maxHealth: state1.maxHealth });
-  }, [p1.id, state1.health, state1.maxHealth]);
-  useEffect(() => {
-    gameEvents.emit('health-changed', { playerId: p2.id, health: state2.health, maxHealth: state2.maxHealth });
-  }, [p2.id, state2.health, state2.maxHealth]);
+  if (!code || !name) {
+    return (
+      <div className="game1-page">
+        <h1>Game 1: Elemental Arena</h1>
+        <p>You need to join a game first.</p>
+        <Link to="/join">Go to Join Game</Link>
+      </div>
+    );
+  }
 
-  // Prep countdown -> battle.
-  useEffect(() => {
-    if (phase !== 'prep') return undefined;
-    if (prepSecondsLeft <= 0) {
-      setPhase('battle');
-      gameEvents.emit('phase-changed', { phase: 'battle' });
-      return undefined;
-    }
-    const id = setTimeout(() => setPrepSecondsLeft((s) => s - 1), 1000);
-    return () => clearTimeout(id);
-  }, [phase, prepSecondsLeft]);
+  if (connectError) {
+    return (
+      <div className="game1-page">
+        <h1>Game 1: Elemental Arena</h1>
+        <p style={{ color: '#ff5c5c' }}>{connectError}</p>
+        <Link to="/join">Back to Join Game</Link>
+      </div>
+    );
+  }
 
-  // Win condition.
-  useEffect(() => {
-    if (phase !== 'battle') return;
-    if (state1.health <= 0) {
-      setWinnerId(p2.id);
-      setPhase('over');
-      gameEvents.emit('phase-changed', { phase: 'over' });
-    } else if (state2.health <= 0) {
-      setWinnerId(p1.id);
-      setPhase('over');
-      gameEvents.emit('phase-changed', { phase: 'over' });
-    }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [state1.health, state2.health, phase]);
+  if (!snapshot || !youId) {
+    return (
+      <div className="game1-page">
+        <h1>Game 1: Elemental Arena</h1>
+        <p>Connecting...</p>
+      </div>
+    );
+  }
 
-  const handleBuy = (playerId, item) => {
-    setPendingItem((prev) => ({ ...prev, [playerId]: { item, progress: 0 } }));
-    questionStates[playerId].nextQuestion();
-  };
+  const me = snapshot.players.find((p) => p.id === youId);
+  const others = snapshot.players.filter((p) => p.id !== youId);
 
-  const handleAnswer = (playerId, answerIndex) => {
-    const correct = questionStates[playerId].checkAnswer(answerIndex);
-    questionStates[playerId].clearQuestion();
+  if (!me) {
+    return (
+      <div className="game1-page">
+        <h1>Game 1: Elemental Arena</h1>
+        <p>You're not in this match (it may have restarted).</p>
+        <Link to="/join">Back to Join Game</Link>
+      </div>
+    );
+  }
 
-    setPendingItem((prev) => {
-      const current = prev[playerId];
-      if (!current) return prev;
+  const shop = me.shopId ? getShopById(me.shopId) : null;
+  const shopItems = shop ? getShopItems(shop) : [];
+  const unlockedAbilityObjs = me.unlockedAbilities
+    .map((abilityName) => ALL_ABILITIES.find((a) => a.name === abilityName))
+    .filter(Boolean);
 
-      if (!correct) {
-        // Wrong answer: no progress lost, just try again.
-        questionStates[playerId].nextQuestion();
-        return prev;
+  const socket = getSocket();
+
+  const handleBuy = (item) => {
+    setActionError(null);
+    socket.emit('arena:shop-buy', { abilityName: item.name }, (res) => {
+      if (!res?.ok) {
+        setActionError(res?.error || 'Could not start that purchase.');
+        return;
       }
-
-      const progress = current.progress + 1;
-      if (progress >= current.item.unlockCost) {
-        gameStates[playerId].unlockAbility(current.item);
-        setLastUnlock((prevUnlock) => ({ ...prevUnlock, [playerId]: current.item.name }));
-        setTimeout(() => setLastUnlock((prevUnlock) => ({ ...prevUnlock, [playerId]: null })), 2500);
-        return { ...prev, [playerId]: null };
-      }
-
-      questionStates[playerId].nextQuestion();
-      return { ...prev, [playerId]: { ...current, progress } };
+      setPending({ abilityName: item.name, progress: 0, unlockCost: item.unlockCost });
+      setCurrentQuestion(res.question);
     });
   };
 
-  const handleCast = (playerId, abilityName) => {
-    const ability = gameStates[playerId].castAbility(abilityName);
-    if (ability) gameEvents.emit('cast-ability', { playerId, ability });
+  const handleAnswer = (answerIndex) => {
+    socket.emit('arena:answer', { answerIndex }, (res) => {
+      if (!res?.ok) {
+        setActionError(res?.error || 'Something went wrong.');
+        setCurrentQuestion(null);
+        setPending(null);
+        return;
+      }
+      if (res.unlocked) {
+        setLastUnlock(res.abilityName);
+        setTimeout(() => setLastUnlock(null), 2500);
+        setCurrentQuestion(null);
+        setPending(null);
+        return;
+      }
+      setPending((prev) => (prev ? { ...prev, progress: res.progress ?? prev.progress } : prev));
+      setCurrentQuestion(res.nextQuestion || null);
+    });
   };
 
-  const handleStartBattleNow = () => {
-    setPhase('battle');
-    gameEvents.emit('phase-changed', { phase: 'battle' });
+  const handleCast = (abilityName) => {
+    setActionError(null);
+    socket.emit('arena:cast-ability', { abilityName }, (res) => {
+      if (!res?.ok) setActionError(res?.error || 'Could not use that ability.');
+    });
   };
 
-  const handleRestart = () => {
-    state1.reset();
-    state2.reset();
-    setActiveShopId({ [p1.id]: null, [p2.id]: null });
-    setPendingItem({ [p1.id]: null, [p2.id]: null });
-    setLastUnlock({ [p1.id]: null, [p2.id]: null });
-    setWinnerId(null);
-    setPhase('prep');
-    setPrepSecondsLeft(PREP_DURATION_SECONDS);
-    setRestartKey((k) => k + 1);
-  };
+  const prepSecondsLeft = Math.max(0, Math.round((snapshot.prepEndsAt - now) / 1000));
+  const winner = snapshot.phase === 'over' ? snapshot.players.find((p) => p.id === snapshot.winnerId) : null;
 
   return (
     <div className="game1-page">
@@ -215,52 +176,65 @@ export default function Game1() {
         stronger items take more correct answers. Once the timer runs out, battle begins.
       </p>
 
-      <div className={`phase-banner ${phase === 'battle' ? 'battle' : ''}`}>
-        {phase === 'prep' && (
-          <>
-            <span>🛒 Prep phase — shop and get ready: {prepSecondsLeft}s left</span>
-            <button onClick={handleStartBattleNow}>Start Battle Now</button>
-          </>
-        )}
-        {phase === 'battle' && <span>⚔️ Battle! Attacks are live.</span>}
-        {phase === 'over' && (
-          <span>
-            🏆 {winnerId === p1.id ? p1.label : p2.label} wins!
-          </span>
+      <div className={`phase-banner ${snapshot.phase === 'battle' ? 'battle' : ''}`}>
+        {snapshot.phase === 'prep' && <span>🛒 Prep phase — shop and get ready: {prepSecondsLeft}s left</span>}
+        {snapshot.phase === 'battle' && <span>⚔️ Battle! Attacks are live.</span>}
+        {snapshot.phase === 'over' && (
+          <span>🏆 {winner ? winner.name : 'Someone'} wins!</span>
         )}
       </div>
 
       <div className="game-world">
-        <GameCanvas key={restartKey} />
-        {phase === 'over' && (
+        <GameCanvas />
+        {snapshot.phase === 'over' && (
           <div className="game-over-overlay">
-            <p>{winnerId === p1.id ? p1.label : p2.label} wins!</p>
-            <button onClick={handleRestart}>Play Again</button>
+            <p>{winner ? winner.name : 'Someone'} wins!</p>
+            <Link to="/join">Back to Lobby</Link>
           </div>
         )}
       </div>
 
-      {(lastUnlock[p1.id] || lastUnlock[p2.id]) && (
-        <div className="unlock-toast">
-          {lastUnlock[p1.id] && `${p1.label} unlocked: ${lastUnlock[p1.id]}! `}
-          {lastUnlock[p2.id] && `${p2.label} unlocked: ${lastUnlock[p2.id]}!`}
-        </div>
-      )}
+      {lastUnlock && <div className="unlock-toast">Unlocked: {lastUnlock}!</div>}
+      {actionError && <div className="unlock-toast" style={{ background: '#8a2f2f' }}>{actionError}</div>}
 
       <div className="player-panels">
-        {LOCAL_PLAYERS.map((config) => (
-          <PlayerPanel
-            key={config.id}
-            config={config}
-            gameState={gameStates[config.id]}
-            questionState={questionStates[config.id]}
-            activeShopId={activeShopId[config.id]}
-            pending={pendingItem[config.id]}
-            onBuy={(item) => handleBuy(config.id, item)}
-            onAnswer={(answerIndex) => handleAnswer(config.id, answerIndex)}
-            onCast={(abilityName) => handleCast(config.id, abilityName)}
-          />
-        ))}
+        <div className="player-panel" style={{ '--player-color': toHex(me.color) }}>
+          <div className="player-panel-label">
+            <span className="player-color-dot" />
+            {me.name} (you)
+          </div>
+          <HUD health={me.health} maxHealth={me.maxHealth} energy={me.energy} maxEnergy={me.maxEnergy} />
+          <AbilityBar abilities={unlockedAbilityObjs} energy={me.energy} onCast={handleCast} />
+
+          {currentQuestion ? (
+            <QuestionModal
+              question={currentQuestion.question}
+              answers={currentQuestion.answers}
+              onAnswer={handleAnswer}
+            />
+          ) : (
+            shop && <ShopPanel shop={shop} items={shopItems} ownedNames={me.unlockedAbilities} onBuy={handleBuy} />
+          )}
+
+          {pending && currentQuestion && (
+            <p style={{ fontSize: 12, opacity: 0.7, margin: 0 }}>
+              Unlocking {pending.abilityName}: {pending.progress}/{pending.unlockCost} correct
+            </p>
+          )}
+        </div>
+
+        {others.length > 0 && (
+          <div className="player-panel" style={{ '--player-color': '#3a3a4a' }}>
+            <div className="player-panel-label">Other players ({others.length})</div>
+            <ul style={{ listStyle: 'none', padding: 0, margin: 0, display: 'flex', flexDirection: 'column', gap: 8 }}>
+              {others.map((p) => (
+                <li key={p.id}>
+                  <span style={{ color: toHex(p.color) }}>●</span> {p.name} — {Math.round(p.health)}/{p.maxHealth} HP
+                </li>
+              ))}
+            </ul>
+          </div>
+        )}
       </div>
     </div>
   );
