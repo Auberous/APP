@@ -15,8 +15,14 @@ import { loadQuestion } from './questionLoader.js';
 // drift. Worth consolidating into a shared package once this stabilizes.
 
 const TILE_SIZE = 32;
-const GRID_WIDTH = 16;
-const GRID_HEIGHT = 10;
+// A much bigger arena: a central grass "warzone" band where everyone
+// spawns (so players find each other quickly if they want to fight),
+// with three biome regions further out — fire, ice, and shadow — each
+// hosting one shop. Reaching a shop/biome is a deliberate choice, not
+// something you stumble into. See game/biomes.js on the client for the
+// matching visual zone layout (kept in sync with SHOPS below).
+const GRID_WIDTH = 40;
+const GRID_HEIGHT = 24;
 const PLAYER_SPEED = 140; // px/sec
 const ATTACK_RANGE = TILE_SIZE * 1.75;
 const SHOP_RADIUS = TILE_SIZE * 1.8;
@@ -24,15 +30,18 @@ const ENERGY_REGEN_PER_SEC = 4;
 
 export const PREP_DURATION_MS = 60000;
 
+// All spawns sit in the central grass band so players start near each
+// other; the biomes (and the choice to head into one, or not) are all
+// optional extra distance away.
 const SPAWN_POINTS = [
-  { col: 3, row: 5 },
-  { col: 12, row: 5 },
-  { col: 3, row: 8 },
-  { col: 12, row: 8 },
-  { col: 3, row: 2 },
-  { col: 12, row: 2 },
-  { col: 7, row: 5 },
-  { col: 7, row: 2 },
+  { col: 14, row: 12 },
+  { col: 26, row: 12 },
+  { col: 14, row: 14 },
+  { col: 26, row: 14 },
+  { col: 20, row: 11 },
+  { col: 20, row: 15 },
+  { col: 17, row: 13 },
+  { col: 23, row: 13 },
 ];
 
 const PALETTE = [

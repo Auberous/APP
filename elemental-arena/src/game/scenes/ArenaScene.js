@@ -1,11 +1,21 @@
 import Phaser from 'phaser';
 import { gameEvents } from '../gameEvents.js';
 import { SHOPS } from '../shops.js';
+import { GRID_WIDTH, GRID_HEIGHT, BIOME, getBiomeAt } from '../biomes.js';
 
 const TILE_SIZE = 32;
-const GRID_WIDTH = 16;
-const GRID_HEIGHT = 10;
 const LERP_FACTOR = 0.35; // how quickly sprites glide toward the server's position each frame
+
+// Tile variants per biome, weighted so the plain tile dominates and
+// accented ones are sprinkled in — plus each placed tile gets a random
+// rotation/flip/tint so even a handful of source textures don't read as
+// an obviously stamped repeating pattern.
+const BIOME_TILE_KEYS = {
+  [BIOME.GRASS]: ['grass', 'grass', 'grass', 'grass', 'grass-flower', 'grass-pebble'],
+  [BIOME.FIRE]: ['fire', 'fire', 'fire', 'fire-ember'],
+  [BIOME.ICE]: ['ice', 'ice', 'ice', 'ice-crystal'],
+  [BIOME.SHADOW]: ['shadow', 'shadow', 'shadow', 'shadow-rune'],
+};
 
 // A pure renderer: this scene owns no game rules at all. It draws whatever
 // the latest server snapshot says (players, blocks, health) and plays
@@ -29,6 +39,8 @@ export class ArenaScene extends Phaser.Scene {
   }
 
   create() {
+    this.cameras.main.setBounds(0, 0, GRID_WIDTH * TILE_SIZE, GRID_HEIGHT * TILE_SIZE);
+
     this.drawGround();
     this.blockLayer = this.add.group();
     this.drawShops();
@@ -87,7 +99,7 @@ export class ArenaScene extends Phaser.Scene {
   generateStaticTextures() {
     const g = this.make.graphics({ x: 0, y: 0, add: false });
 
-    // Plain grass tile.
+    // --- Grass biome (neutral central "warzone") ---------------------------
     g.fillStyle(0x3a9d4f, 1);
     g.fillRect(0, 0, TILE_SIZE, TILE_SIZE);
     g.fillStyle(0x35914a, 1);
@@ -99,7 +111,6 @@ export class ArenaScene extends Phaser.Scene {
     g.generateTexture('grass', TILE_SIZE, TILE_SIZE);
     g.clear();
 
-    // Grass with a small flower — sprinkled in occasionally for variety.
     g.fillStyle(0x3a9d4f, 1);
     g.fillRect(0, 0, TILE_SIZE, TILE_SIZE);
     g.fillStyle(0x35914a, 1);
@@ -112,7 +123,6 @@ export class ArenaScene extends Phaser.Scene {
     g.generateTexture('grass-flower', TILE_SIZE, TILE_SIZE);
     g.clear();
 
-    // Grass with a pebble tuft.
     g.fillStyle(0x3a9d4f, 1);
     g.fillRect(0, 0, TILE_SIZE, TILE_SIZE);
     g.fillStyle(0x35914a, 1);
@@ -124,7 +134,31 @@ export class ArenaScene extends Phaser.Scene {
     g.generateTexture('grass-pebble', TILE_SIZE, TILE_SIZE);
     g.clear();
 
-    // Buildable block (stone, with a highlighted top face).
+    // --- Fire biome: cracked volcanic rock with glowing lava veins --------
+    this.paintFireTile(g, false);
+    g.generateTexture('fire', TILE_SIZE, TILE_SIZE);
+    g.clear();
+    this.paintFireTile(g, true);
+    g.generateTexture('fire-ember', TILE_SIZE, TILE_SIZE);
+    g.clear();
+
+    // --- Ice biome: cracked ice with sparkle + occasional crystal cluster -
+    this.paintIceTile(g, false);
+    g.generateTexture('ice', TILE_SIZE, TILE_SIZE);
+    g.clear();
+    this.paintIceTile(g, true);
+    g.generateTexture('ice-crystal', TILE_SIZE, TILE_SIZE);
+    g.clear();
+
+    // --- Shadow biome: dark mossy stone, occasional glowing rune ----------
+    this.paintShadowTile(g, false);
+    g.generateTexture('shadow', TILE_SIZE, TILE_SIZE);
+    g.clear();
+    this.paintShadowTile(g, true);
+    g.generateTexture('shadow-rune', TILE_SIZE, TILE_SIZE);
+    g.clear();
+
+    // --- Buildable block (stone, with a highlighted top face) -------------
     g.fillStyle(0x8d7355, 1);
     g.fillRect(0, 0, TILE_SIZE, TILE_SIZE);
     g.fillStyle(0xa08765, 1);
@@ -134,8 +168,7 @@ export class ArenaScene extends Phaser.Scene {
     g.generateTexture('block', TILE_SIZE, TILE_SIZE);
     g.clear();
 
-    // Shop stalls: a pole, a striped awning, and a counter, tinted by
-    // shop.color.
+    // --- Shop stalls: a pole, a striped awning, and a counter -------------
     SHOPS.forEach((shop) => {
       g.fillStyle(0x5a4632, 1);
       g.fillRect(TILE_SIZE / 2 - 2, TILE_SIZE * 0.35, 4, TILE_SIZE * 0.5);
@@ -155,6 +188,89 @@ export class ArenaScene extends Phaser.Scene {
     });
 
     g.destroy();
+  }
+
+  // Cracked volcanic rock, glowing lava veins running through the cracks —
+  // echoes the "cracked lava ground" reference art.
+  // Asymmetric on purpose — a centered cross/plus pattern is rotationally
+  // symmetric, so the per-tile random rotation in drawGround() wouldn't
+  // actually create any visual variety. An off-center diagonal crack does.
+  paintFireTile(g, withEmber) {
+    g.fillStyle(0x2b1c17, 1);
+    g.fillRect(0, 0, TILE_SIZE, TILE_SIZE);
+    g.fillStyle(0x4a3327, 1);
+    g.fillRect(2, 2, TILE_SIZE - 6, TILE_SIZE - 6);
+    g.fillRect(TILE_SIZE - 12, 4, 8, 10);
+    g.fillRect(4, TILE_SIZE - 14, 10, 10);
+
+    // A diagonal crack sweeping from one corner, with a short branch —
+    // not centered, not symmetric.
+    g.fillStyle(0xff7a1f, 1);
+    g.fillRect(4, 6, 3, 10);
+    g.fillRect(6, 14, 3, 8);
+    g.fillRect(8, 20, 10, 3);
+    g.fillRect(16, 18, 3, 6);
+    g.fillStyle(0xffc95c, 0.9);
+    g.fillRect(5, 8, 1, 6);
+    g.fillRect(9, 21, 6, 1);
+
+    if (withEmber) {
+      g.fillStyle(0xffb347, 1);
+      g.fillCircle(TILE_SIZE * 0.75, TILE_SIZE * 0.25, 2.5);
+      g.fillStyle(0xffe2ac, 1);
+      g.fillCircle(TILE_SIZE * 0.75, TILE_SIZE * 0.25, 1);
+    }
+  }
+
+  // Cracked ice sheet with sparkle highlights, occasionally a small blue
+  // crystal cluster in a corner.
+  paintIceTile(g, withCrystal) {
+    g.fillStyle(0x9fd4f5, 1);
+    g.fillRect(0, 0, TILE_SIZE, TILE_SIZE);
+    g.fillStyle(0xc7e9fa, 1);
+    g.fillRect(2, 2, TILE_SIZE - 8, TILE_SIZE - 10);
+
+    // An off-center diagonal crack, not a centered cross.
+    g.fillStyle(0x7fb8e0, 0.8);
+    g.fillRect(6, 3, 2, 9);
+    g.fillRect(8, 11, 2, 8);
+    g.fillRect(10, 18, 9, 2);
+    g.fillRect(19, 15, 2, 5);
+
+    g.fillStyle(0xffffff, 0.9);
+    g.fillRect(22, 6, 2, 2);
+    g.fillRect(25, 22, 2, 2);
+    g.fillRect(14, 26, 2, 2);
+
+    if (withCrystal) {
+      g.fillStyle(0x4bb8e8, 1);
+      g.fillTriangle(3, TILE_SIZE - 2, 8, TILE_SIZE - 14, 12, TILE_SIZE - 2);
+      g.fillStyle(0x9fe4ff, 0.9);
+      g.fillTriangle(5, TILE_SIZE - 2, 8, TILE_SIZE - 11, 9, TILE_SIZE - 2);
+    }
+  }
+
+  // Dark mossy stone, occasionally a glowing purple rune mark.
+  paintShadowTile(g, withRune) {
+    g.fillStyle(0x232030, 1);
+    g.fillRect(0, 0, TILE_SIZE, TILE_SIZE);
+    g.fillStyle(0x2c2838, 1);
+    g.fillRect(2, 2, TILE_SIZE - 8, TILE_SIZE - 6);
+    g.fillRect(TILE_SIZE - 12, TILE_SIZE - 14, 9, 10);
+    g.fillStyle(0x1a1826, 0.7);
+    g.fillRect(0, TILE_SIZE / 2, TILE_SIZE, 1);
+    g.fillRect(TILE_SIZE / 2, 0, 1, TILE_SIZE);
+
+    g.fillStyle(0x4a6b3a, 1);
+    g.fillRect(4, 4, 3, 2);
+    g.fillRect(TILE_SIZE - 8, TILE_SIZE - 6, 3, 2);
+
+    if (withRune) {
+      g.fillStyle(0xb07cff, 0.9);
+      g.fillCircle(TILE_SIZE / 2, TILE_SIZE / 2, 4);
+      g.fillStyle(0xe4d4ff, 0.9);
+      g.fillCircle(TILE_SIZE / 2, TILE_SIZE / 2, 1.5);
+    }
   }
 
   ensurePlayerTexture(color) {
@@ -188,9 +304,22 @@ export class ArenaScene extends Phaser.Scene {
   drawGround() {
     for (let row = 0; row < GRID_HEIGHT; row += 1) {
       for (let col = 0; col < GRID_WIDTH; col += 1) {
-        const roll = Math.random();
-        const key = roll < 0.08 ? 'grass-flower' : roll < 0.16 ? 'grass-pebble' : 'grass';
-        this.add.image(col * TILE_SIZE + TILE_SIZE / 2, row * TILE_SIZE + TILE_SIZE / 2, key);
+        const biome = getBiomeAt(col, row);
+        const variants = BIOME_TILE_KEYS[biome];
+        const key = variants[Math.floor(Math.random() * variants.length)];
+
+        const tile = this.add.image(
+          col * TILE_SIZE + TILE_SIZE / 2,
+          row * TILE_SIZE + TILE_SIZE / 2,
+          key
+        );
+
+        // Random rotation/flip/tint so the handful of source tiles don't
+        // read as an obviously stamped repeating pattern.
+        tile.setRotation((Math.floor(Math.random() * 4) * Math.PI) / 2);
+        tile.setFlipX(Math.random() < 0.5);
+        const channel = Math.round(220 + Math.random() * 35); // 220-255, never overflows
+        tile.setTint(Phaser.Display.Color.GetColor(channel, channel, channel));
       }
     }
   }
@@ -277,6 +406,11 @@ export class ArenaScene extends Phaser.Scene {
         color: '#f2f2f7',
       })
       .setOrigin(0.5, 0);
+
+    if (p.id === this.youId) {
+      // Bigger world than one screen now — follow the local player.
+      this.cameras.main.startFollow(sprite, true, 0.15, 0.15);
+    }
 
     return { sprite, healthBarBg, healthBarFill, label, targetX: p.x, targetY: p.y };
   }

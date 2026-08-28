@@ -293,7 +293,7 @@ a {
 
 .game-world {
   position: relative;
-  width: 512px;
+  width: 640px;
   max-width: 100%;
   margin: 12px 0;
 }
@@ -325,7 +325,7 @@ a {
   display: flex;
   flex-direction: column;
   gap: 6px;
-  width: 512px;
+  width: 640px;
   max-width: 100%;
 }
 
@@ -433,11 +433,11 @@ a {
 .game1-hint {
   opacity: 0.75;
   font-size: 14px;
-  max-width: 512px;
+  max-width: 640px;
 }
 
 .shop-panel {
-  width: 512px;
+  width: 640px;
   max-width: 100%;
   margin: 12px 0;
   padding: 12px 14px;

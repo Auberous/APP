@@ -3,8 +3,10 @@ import Phaser from 'phaser';
 import { ArenaScene } from '../game/scenes/ArenaScene.js';
 import { gameEvents } from '../game/gameEvents.js';
 
-const WIDTH = 16 * 32;
-const HEIGHT = 10 * 32;
+// A viewport into the (much bigger) world — the camera follows the local
+// player and scrolls within the world bounds set in ArenaScene.create().
+const WIDTH = 20 * 32;
+const HEIGHT = 12 * 32;
 
 export default function GameCanvas() {
   const containerRef = useRef(null);
