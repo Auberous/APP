@@ -157,3 +157,75 @@ a {
   color: #f2f2f7;
   cursor: pointer;
 }
+
+.game1-hint {
+  opacity: 0.75;
+  font-size: 14px;
+  max-width: 512px;
+}
+
+.shop-panel {
+  width: 512px;
+  max-width: 100%;
+  margin: 12px 0;
+  padding: 12px 14px;
+  border: 1px solid #3a3a4a;
+  border-radius: 8px;
+  background: #1b1b26;
+}
+
+.shop-panel h3 {
+  margin: 0 0 4px;
+}
+
+.shop-panel-hint {
+  margin: 0 0 10px;
+  font-size: 12px;
+  opacity: 0.7;
+}
+
+.shop-panel ul {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.shop-panel li {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  padding: 8px;
+  background: #22222e;
+  border-radius: 6px;
+}
+
+.shop-item-info {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.shop-item-info span {
+  font-size: 12px;
+  opacity: 0.75;
+}
+
+.shop-panel button {
+  padding: 6px 12px;
+  border-radius: 6px;
+  border: 1px solid #3a3a4a;
+  background: #2f6fed;
+  color: #fff;
+  cursor: pointer;
+  white-space: nowrap;
+}
+
+.shop-panel button:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+  background: #3a3a4a;
+}

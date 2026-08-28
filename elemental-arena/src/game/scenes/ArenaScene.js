@@ -2,6 +2,7 @@ import Phaser from 'phaser';
 import { gameEvents } from '../gameEvents.js';
 import { calculateDamage } from '../../utils/calculateDamage.js';
 import { ELEMENTS } from '../elements.js';
+import { SHOPS } from '../shops.js';
 
 const TILE_SIZE = 32;
 const GRID_WIDTH = 16;
@@ -12,6 +13,7 @@ const ATTACK_RANGE = TILE_SIZE * 1.75;
 const ENEMY_ATTACK_RANGE = TILE_SIZE * 1.5;
 const ENEMY_DAMAGE = 8;
 const ENEMY_MAX_HEALTH = 100;
+const SHOP_RADIUS = TILE_SIZE * 1.4;
 
 const FACING_OFFSET = {
   up: { x: 0, y: -1 },
@@ -26,6 +28,7 @@ export class ArenaScene extends Phaser.Scene {
     this.facing = 'down';
     this.enemyHealth = ENEMY_MAX_HEALTH;
     this.blockTiles = new Set();
+    this.currentShopId = null;
   }
 
   preload() {
@@ -56,6 +59,8 @@ export class ArenaScene extends Phaser.Scene {
 
     this.physics.add.collider(this.player, this.blocks);
 
+    this.drawShops();
+
     this.enemyHealthBarBg = this.add.rectangle(0, 0, TILE_SIZE, 5, 0x220000);
     this.enemyHealthBarFill = this.add.rectangle(0, 0, TILE_SIZE, 5, 0xff3b3b);
     this.updateEnemyHealthBar();
@@ -82,6 +87,7 @@ export class ArenaScene extends Phaser.Scene {
 
   update() {
     this.handleMovement();
+    this.checkShopZones();
     this.enemyHealthBarBg.setPosition(this.enemy.x, this.enemy.y - TILE_SIZE * 0.9);
     this.enemyHealthBarFill.setPosition(
       this.enemy.x - TILE_SIZE / 2 + this.enemyHealthBarFill.width / 2,
@@ -127,7 +133,37 @@ export class ArenaScene extends Phaser.Scene {
     g.fillStyle(0x74593d, 1);
     g.fillRect(0, TILE_SIZE - 6, TILE_SIZE, 6);
     g.generateTexture('block', TILE_SIZE, TILE_SIZE);
+    g.clear();
+
+    // Shop marker (one texture per shop, tinted by shop.color) — a simple
+    // pixel-art tent/stall shape.
+    SHOPS.forEach((shop) => {
+      g.fillStyle(shop.color, 1);
+      g.fillTriangle(TILE_SIZE / 2, 0, 0, TILE_SIZE * 0.7, TILE_SIZE, TILE_SIZE * 0.7);
+      g.fillStyle(0xffffff, 0.85);
+      g.fillRect(TILE_SIZE * 0.35, TILE_SIZE * 0.7, TILE_SIZE * 0.3, TILE_SIZE * 0.3);
+      g.generateTexture(`shop-${shop.id}`, TILE_SIZE, TILE_SIZE);
+      g.clear();
+    });
+
     g.destroy();
+  }
+
+  drawShops() {
+    SHOPS.forEach((shop) => {
+      const x = shop.tile.col * TILE_SIZE + TILE_SIZE / 2;
+      const y = shop.tile.row * TILE_SIZE + TILE_SIZE / 2;
+      this.add.image(x, y, `shop-${shop.id}`);
+      this.add
+        .text(x, y - TILE_SIZE * 0.9, shop.name, {
+          fontFamily: 'monospace',
+          fontSize: '10px',
+          color: '#f2f2f7',
+          backgroundColor: '#14141c',
+          padding: { x: 3, y: 2 },
+        })
+        .setOrigin(0.5, 1);
+    });
   }
 
   drawGround() {
@@ -167,6 +203,26 @@ export class ArenaScene extends Phaser.Scene {
       }
     } else {
       this.player.setVelocity(0, 0);
+    }
+  }
+
+  // --- shops -------------------------------------------------------------
+
+  checkShopZones() {
+    const nearShop = SHOPS.find((shop) => {
+      const x = shop.tile.col * TILE_SIZE + TILE_SIZE / 2;
+      const y = shop.tile.row * TILE_SIZE + TILE_SIZE / 2;
+      return Phaser.Math.Distance.Between(this.player.x, this.player.y, x, y) <= SHOP_RADIUS;
+    });
+    const nextShopId = nearShop ? nearShop.id : null;
+
+    if (nextShopId !== this.currentShopId) {
+      this.currentShopId = nextShopId;
+      if (nextShopId) {
+        gameEvents.emit('shop-entered', { shopId: nextShopId });
+      } else {
+        gameEvents.emit('shop-exited', {});
+      }
     }
   }
 

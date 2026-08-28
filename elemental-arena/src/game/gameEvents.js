@@ -10,6 +10,8 @@ import Phaser from 'phaser';
 // Phaser -> React:
 //   'player-damaged'    { amount }             enemy hit the player
 //   'enemy-defeated'    {}                      enemy dummy's HP hit 0
+//   'shop-entered'       { shopId }             player walked into a shop zone
+//   'shop-exited'         {}                    player walked out of a shop zone
 export const gameEvents = new Phaser.Events.EventEmitter();
 
 export default gameEvents;
