@@ -1,0 +1,11 @@
+services:
+  - type: web
+    name: elemental-arena-server
+    runtime: node
+    rootDir: server
+    plan: free
+    buildCommand: npm install
+    startCommand: node index.js
+    envVars:
+      - key: CLIENT_ORIGIN
+        value: "*" # tighten to your deployed frontend URL once you have it
