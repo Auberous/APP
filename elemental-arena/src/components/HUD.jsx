@@ -1,25 +1,23 @@
-function Bar({ label, value, max, color }) {
-  const pct = Math.max(0, Math.min(100, (value / max) * 100));
-  return (
-    <div className="hud-bar">
-      <span className="hud-bar-label">
-        {label}: {value}/{max}
-      </span>
-      <div className="hud-bar-track">
-        <div
-          className="hud-bar-fill"
-          style={{ width: `${pct}%`, backgroundColor: color }}
-        />
-      </div>
-    </div>
-  );
-}
+const HITS_TO_DISABLE = 3;
 
-export default function HUD({ health, maxHealth = 100, energy, maxEnergy = 100 }) {
+export default function HUD({ teamName, teamColor, hitsTaken, disabled, respawnMsLeft }) {
   return (
     <div className="hud">
-      <Bar label="Health" value={health} max={maxHealth} color="#ff5c5c" />
-      <Bar label="Energy" value={energy} max={maxEnergy} color="#7fd8ff" />
+      <span className="hud-team-label" style={{ color: teamColor }}>
+        {teamName}
+      </span>
+      {disabled ? (
+        <span className="hud-respawn">Respawning… {Math.ceil(respawnMsLeft / 1000)}s</span>
+      ) : (
+        <div className="hud-pips">
+          {Array.from({ length: HITS_TO_DISABLE }).map((_, i) => (
+            <span key={i} className={`hud-pip ${i < hitsTaken ? 'hit' : ''}`} />
+          ))}
+          <span className="hud-pips-label">
+            {hitsTaken}/{HITS_TO_DISABLE} hits
+          </span>
+        </div>
+      )}
     </div>
   );
 }

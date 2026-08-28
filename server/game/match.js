@@ -1,89 +1,64 @@
-import { abilities } from './abilities.js';
-import { SHOPS, getShopItems } from './shops.js';
-import { loadQuestion } from './questionLoader.js';
+import { TEAMS } from './teams.js';
+import { BASES, TILE_SIZE, GRID_WIDTH, GRID_HEIGHT, getBase } from './bases.js';
 
-// The server is authoritative for everything in here: position, health,
-// energy, unlocked abilities, shop progress. Clients only send input and
-// intent (move this way, cast this ability, buy this item, answer with
-// this index) and render whatever snapshot() returns — see the note in
-// game/gameEvents.js on the client for the render-only contract that
-// keeps the Phaser scene from re-deriving any of this itself.
+// Two-Base Team Arena — Phase 1. The server is authoritative for
+// everything: position, team assignment, melee hits, disable/respawn.
+// Clients only send input and intent, and render whatever snapshot()
+// returns.
 //
-// NOTE: this file is presently duplicated from elemental-arena/src/game/
-// (abilities.js, shops.js, questionLoader.js, elements.js) rather than
-// shared via a workspace package — fine for now, but the two copies can
-// drift. Worth consolidating into a shared package once this stabilizes.
+// Deliberately NOT in Phase 1 (see server/README.md for the phase plan):
+// cannons/artillery, fire, repair, robot dogs, sabotage, the teacher
+// Q&A resource economy. This is melee-only, two teams, disable-and-
+// respawn — the smallest real slice of the full spec.
 
-const TILE_SIZE = 32;
-// A much bigger arena: a central grass "warzone" band where everyone
-// spawns (so players find each other quickly if they want to fight),
-// with three biome regions further out — fire, ice, and shadow — each
-// hosting one shop. Reaching a shop/biome is a deliberate choice, not
-// something you stumble into. See game/biomes.js on the client for the
-// matching visual zone layout (kept in sync with SHOPS below).
-const GRID_WIDTH = 40;
-const GRID_HEIGHT = 24;
 const PLAYER_SPEED = 140; // px/sec
-const ATTACK_RANGE = TILE_SIZE * 1.75;
-const SHOP_RADIUS = TILE_SIZE * 1.8;
-const ENERGY_REGEN_PER_SEC = 4;
-
-export const PREP_DURATION_MS = 60000;
-
-// All spawns sit in the central grass band so players start near each
-// other; the biomes (and the choice to head into one, or not) are all
-// optional extra distance away.
-const SPAWN_POINTS = [
-  { col: 14, row: 12 },
-  { col: 26, row: 12 },
-  { col: 14, row: 14 },
-  { col: 26, row: 14 },
-  { col: 20, row: 11 },
-  { col: 20, row: 15 },
-  { col: 17, row: 13 },
-  { col: 23, row: 13 },
-];
-
-const PALETTE = [
-  0x2f6fed, 0x9b4bd9, 0x3ddc6a, 0xd98a4b, 0x4bd9c9, 0xd94ba0, 0xd9c94b, 0xd94b4b,
-];
-
-const FACING_OFFSET = {
-  up: { x: 0, y: -1 },
-  down: { x: 0, y: 1 },
-  left: { x: -1, y: 0 },
-  right: { x: 1, y: 0 },
-};
+const PUNCH_RANGE = TILE_SIZE * 1.5;
+const PUNCH_COOLDOWN_MS = 600;
+const HITS_TO_DISABLE = 3;
+const RESPAWN_MS = 3000;
 
 export class Match {
   constructor() {
     this.players = new Map();
-    this.blocks = new Set();
-    this.phase = 'prep';
-    this.prepEndsAt = Date.now() + PREP_DURATION_MS;
-    this.winnerId = null;
+    this.phase = 'live'; // no prep/battle split in this design — 'over' is reserved for a future win condition
+    this.nextTeamIndex = 0;
   }
 
   addPlayer(id, name) {
-    const index = this.players.size % SPAWN_POINTS.length;
-    const spawn = SPAWN_POINTS[index];
+    // Idempotent on purpose: a client can legitimately call arena:enter
+    // more than once for the same socket (React StrictMode's dev-mode
+    // double-invoke, a reconnect, a retried request) — without this
+    // guard, each call would consume another team-rotation slot and
+    // silently reassign/overwrite the player's team.
+    if (this.players.has(id)) return;
+
+    const team = TEAMS[this.nextTeamIndex % TEAMS.length];
+    this.nextTeamIndex += 1;
+
+    const base = getBase(team.id);
+    const teamCount = this.countTeamMembers(team.id);
+    const spawn = base.spawnPoints[teamCount % base.spawnPoints.length];
+
     this.players.set(id, {
       id,
       name,
-      color: PALETTE[index % PALETTE.length],
+      team: team.id,
+      color: team.color,
       x: spawn.col * TILE_SIZE + TILE_SIZE / 2,
       y: spawn.row * TILE_SIZE + TILE_SIZE / 2,
       facing: 'down',
-      health: 100,
-      maxHealth: 100,
-      energy: 100,
-      maxEnergy: 100,
-      unlockedAbilities: [],
       input: { up: false, down: false, left: false, right: false },
-      shopId: null,
-      pendingPurchase: null, // { abilityName, progress, correctIndex }
-      shield: { percent: 0, expiresAt: 0 },
+      hitsTaken: 0,
+      disabled: false,
+      disabledUntil: 0,
+      punchCooldownUntil: 0,
     });
+  }
+
+  countTeamMembers(teamId) {
+    let count = 0;
+    for (const p of this.players.values()) if (p.team === teamId) count += 1;
+    return count;
   }
 
   removePlayer(id) {
@@ -102,18 +77,13 @@ export class Match {
   }
 
   tick(dtSeconds) {
-    if (this.phase === 'prep' && Date.now() >= this.prepEndsAt) {
-      this.phase = 'battle';
-    }
-
+    const now = Date.now();
     for (const p of this.players.values()) {
+      if (p.disabled) {
+        if (now >= p.disabledUntil) p.disabled = false;
+        continue; // no movement while respawning
+      }
       this.movePlayer(p, dtSeconds);
-      this.updateShopZone(p);
-      p.energy = Math.min(p.maxEnergy, p.energy + ENERGY_REGEN_PER_SEC * dtSeconds);
-    }
-
-    if (this.phase === 'battle' && !this.winnerId) {
-      this.checkWinCondition();
     }
   }
 
@@ -136,29 +106,16 @@ export class Match {
       }
     }
 
-    // World-bounds clamp only — no block collision for movement yet.
-    // Placed blocks are strategic cover for build/attack, not yet solid
-    // walls; that's a reasonable next increment, not a blocker for
-    // getting real network play working.
     const half = TILE_SIZE * 0.35;
     p.x = Math.max(half, Math.min(GRID_WIDTH * TILE_SIZE - half, p.x));
     p.y = Math.max(half, Math.min(GRID_HEIGHT * TILE_SIZE - half, p.y));
   }
 
-  updateShopZone(p) {
-    const near = SHOPS.find((shop) => {
-      const x = shop.tile.col * TILE_SIZE + TILE_SIZE / 2;
-      const y = shop.tile.row * TILE_SIZE + TILE_SIZE / 2;
-      return Math.hypot(p.x - x, p.y - y) <= SHOP_RADIUS;
-    });
-    p.shopId = near ? near.id : null;
-  }
-
-  findNearestOpponent(p) {
+  findNearestEnemy(p) {
     let nearest = null;
     let nearestDistance = Infinity;
     for (const other of this.players.values()) {
-      if (other.id === p.id) continue;
+      if (other.team === p.team || other.disabled) continue;
       const distance = Math.hypot(p.x - other.x, p.y - other.y);
       if (distance < nearestDistance) {
         nearestDistance = distance;
@@ -168,145 +125,60 @@ export class Match {
     return nearest ? { player: nearest, distance: nearestDistance } : null;
   }
 
-  castAbility(id, abilityName) {
+  punch(id) {
     const p = this.players.get(id);
     if (!p) return { ok: false, error: 'Unknown player' };
-    if (!p.unlockedAbilities.includes(abilityName)) {
-      return { ok: false, error: 'Not unlocked' };
-    }
-    const ability = abilities.find((a) => a.name === abilityName);
-    if (!ability) return { ok: false, error: 'Unknown ability' };
-    if (p.energy < ability.cost) return { ok: false, error: 'Not enough energy' };
+    if (p.disabled) return { ok: false, error: 'Respawning' };
 
-    p.energy -= ability.cost;
+    const now = Date.now();
+    if (now < p.punchCooldownUntil) return { ok: false, error: 'Punch on cooldown' };
+    p.punchCooldownUntil = now + PUNCH_COOLDOWN_MS;
 
-    if (ability.type === 'attack') {
-      if (this.phase !== 'battle') {
-        return { ok: true, effect: { type: 'blocked', casterId: id, message: "Battle hasn't started yet!" } };
-      }
-      const target = this.findNearestOpponent(p);
-      if (!target || target.distance > ATTACK_RANGE) {
-        return { ok: true, effect: { type: 'attack-miss', casterId: id } };
-      }
-      let damage = ability.damage;
-      const shieldActive = target.player.shield.expiresAt > Date.now();
-      if (shieldActive) {
-        damage = Math.round(damage * (1 - target.player.shield.percent / 100));
-      }
-      target.player.health = Math.max(0, target.player.health - damage);
-      return {
-        ok: true,
-        effect: { type: 'attack', casterId: id, targetId: target.player.id, damage },
-      };
+    const target = this.findNearestEnemy(p);
+    if (!target || target.distance > PUNCH_RANGE) {
+      return { ok: true, effect: { type: 'punch-miss', casterId: id } };
     }
 
-    if (ability.type === 'defend') {
-      p.shield = { percent: ability.shieldPercent, expiresAt: Date.now() + ability.duration };
-      return { ok: true, effect: { type: 'defend', casterId: id, duration: ability.duration } };
+    target.player.hitsTaken += 1;
+    let disabled = false;
+
+    if (target.player.hitsTaken >= HITS_TO_DISABLE) {
+      disabled = true;
+      target.player.hitsTaken = 0;
+      target.player.disabled = true;
+      target.player.disabledUntil = now + RESPAWN_MS;
+      const barracks = getBase(target.player.team).barracks;
+      target.player.x = barracks.col * TILE_SIZE + TILE_SIZE / 2;
+      target.player.y = barracks.row * TILE_SIZE + TILE_SIZE / 2;
     }
 
-    if (ability.type === 'build') {
-      const offset = FACING_OFFSET[p.facing];
-      const col = Math.round(p.x / TILE_SIZE) + offset.x;
-      const row = Math.round(p.y / TILE_SIZE) + offset.y;
-      const key = `${col},${row}`;
-      const inBounds = col >= 0 && col < GRID_WIDTH && row >= 0 && row < GRID_HEIGHT;
-      if (!inBounds || this.blocks.has(key)) {
-        return { ok: true, effect: { type: 'build-fail', casterId: id } };
-      }
-      this.blocks.add(key);
-      return { ok: true, effect: { type: 'build', casterId: id, col, row } };
-    }
-
-    return { ok: false, error: 'Unknown ability type' };
-  }
-
-  startShopPurchase(id, abilityName) {
-    const p = this.players.get(id);
-    if (!p) return { ok: false, error: 'Unknown player' };
-    const shop = SHOPS.find((s) => s.id === p.shopId);
-    if (!shop) return { ok: false, error: "You're not at a shop" };
-    const item = getShopItems(shop).find((a) => a.name === abilityName);
-    if (!item) return { ok: false, error: 'Item not sold here' };
-    if (p.unlockedAbilities.includes(abilityName)) {
-      return { ok: false, error: 'Already unlocked' };
-    }
-
-    const q = loadQuestion();
-    p.pendingPurchase = { abilityName, progress: 0, correctIndex: q.correctAnswer };
-    return { ok: true, question: { question: q.question, answers: q.answers } };
-  }
-
-  answerQuestion(id, answerIndex) {
-    const p = this.players.get(id);
-    if (!p || !p.pendingPurchase) return { ok: false, error: 'No purchase in progress' };
-    const pending = p.pendingPurchase;
-    const correct = answerIndex === pending.correctIndex;
-
-    if (!correct) {
-      const q = loadQuestion();
-      pending.correctIndex = q.correctAnswer;
-      return {
-        ok: true,
-        correct: false,
-        unlocked: false,
-        progress: pending.progress,
-        nextQuestion: { question: q.question, answers: q.answers },
-      };
-    }
-
-    const ability = abilities.find((a) => a.name === pending.abilityName);
-    pending.progress += 1;
-
-    if (pending.progress >= ability.unlockCost) {
-      p.unlockedAbilities.push(pending.abilityName);
-      p.pendingPurchase = null;
-      return { ok: true, correct: true, unlocked: true, abilityName: ability.name };
-    }
-
-    const q = loadQuestion();
-    pending.correctIndex = q.correctAnswer;
     return {
       ok: true,
-      correct: true,
-      unlocked: false,
-      progress: pending.progress,
-      unlockCost: ability.unlockCost,
-      nextQuestion: { question: q.question, answers: q.answers },
+      effect: {
+        type: 'punch',
+        casterId: id,
+        targetId: target.player.id,
+        hitsTaken: target.player.hitsTaken,
+        disabled,
+      },
     };
   }
 
-  startBattleNow() {
-    if (this.phase === 'prep') this.phase = 'battle';
-  }
-
-  checkWinCondition() {
-    const alive = Array.from(this.players.values()).filter((p) => p.health > 0);
-    if (this.players.size >= 2 && alive.length <= 1) {
-      this.phase = 'over';
-      this.winnerId = alive[0]?.id ?? null;
-    }
-  }
-
   snapshot() {
+    const now = Date.now();
     return {
       phase: this.phase,
-      prepEndsAt: this.prepEndsAt,
-      winnerId: this.winnerId,
-      blocks: Array.from(this.blocks),
       players: Array.from(this.players.values()).map((p) => ({
         id: p.id,
         name: p.name,
+        team: p.team,
         color: p.color,
         x: p.x,
         y: p.y,
         facing: p.facing,
-        health: p.health,
-        maxHealth: p.maxHealth,
-        energy: p.energy,
-        maxEnergy: p.maxEnergy,
-        unlockedAbilities: p.unlockedAbilities,
-        shopId: p.shopId,
+        hitsTaken: p.hitsTaken,
+        disabled: p.disabled,
+        respawnMsLeft: p.disabled ? Math.max(0, p.disabledUntil - now) : 0,
       })),
     };
   }

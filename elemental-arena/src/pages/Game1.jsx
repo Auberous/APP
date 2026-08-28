@@ -3,12 +3,8 @@ import { Link, useLocation } from 'react-router-dom';
 
 import GameCanvas from '../components/GameCanvas.jsx';
 import HUD from '../components/HUD.jsx';
-import AbilityBar from '../components/AbilityBar.jsx';
-import QuestionModal from '../components/QuestionModal.jsx';
-import ShopPanel from '../components/ShopPanel.jsx';
 
-import { abilities as ALL_ABILITIES } from '../game/abilities.js';
-import { getShopById, getShopItems } from '../game/shops.js';
+import { getTeamById } from '../game/teams.js';
 import { gameEvents } from '../game/gameEvents.js';
 import { getSocket } from '../net/socket.js';
 
@@ -23,12 +19,7 @@ export default function Game1() {
   const [youId, setYouId] = useState(null);
   const [snapshot, setSnapshot] = useState(null);
   const [connectError, setConnectError] = useState(null);
-
-  const [currentQuestion, setCurrentQuestion] = useState(null);
-  const [pending, setPending] = useState(null); // { abilityName, progress, unlockCost }
-  const [lastUnlock, setLastUnlock] = useState(null);
   const [actionError, setActionError] = useState(null);
-  const [now, setNow] = useState(Date.now());
 
   const youIdRef = useRef(null);
 
@@ -56,31 +47,32 @@ export default function Game1() {
     const handleEffect = ({ effect }) => gameEvents.emit('net:effect', { effect });
     const handleClosed = () => setConnectError('The teacher closed this game.');
     const handleInputChanged = (input) => socket.emit('arena:input', input);
+    const handlePunch = () => {
+      socket.emit('arena:punch', {}, (res) => {
+        if (!res?.ok) setActionError(res?.error || null);
+      });
+    };
 
     socket.on('arena:state', handleState);
     socket.on('arena:effect', handleEffect);
     socket.on('room:closed', handleClosed);
     gameEvents.on('input-changed', handleInputChanged);
+    gameEvents.on('punch-pressed', handlePunch);
 
     return () => {
       socket.off('arena:state', handleState);
       socket.off('arena:effect', handleEffect);
       socket.off('room:closed', handleClosed);
       gameEvents.off('input-changed', handleInputChanged);
+      gameEvents.off('punch-pressed', handlePunch);
     };
   }, [code, name]);
-
-  // Recompute the prep countdown display once a second.
-  useEffect(() => {
-    const id = setInterval(() => setNow(Date.now()), 1000);
-    return () => clearInterval(id);
-  }, []);
 
   if (!code || !name) {
     return (
       <div className="page-shell">
         <h1 className="pixel-heading brand-title" style={{ fontSize: 16 }}>
-          Elemental Arena
+          Two-Base Arena
         </h1>
         <div className="card">
           <p>You need to join a game first.</p>
@@ -96,7 +88,7 @@ export default function Game1() {
     return (
       <div className="page-shell">
         <h1 className="pixel-heading brand-title" style={{ fontSize: 16 }}>
-          Elemental Arena
+          Two-Base Arena
         </h1>
         <div className="card">
           <p className="status-error">{connectError}</p>
@@ -112,7 +104,7 @@ export default function Game1() {
     return (
       <div className="page-shell">
         <h1 className="pixel-heading brand-title" style={{ fontSize: 16 }}>
-          Elemental Arena
+          Two-Base Arena
         </h1>
         <p className="hint-text">Connecting…</p>
       </div>
@@ -126,7 +118,7 @@ export default function Game1() {
     return (
       <div className="page-shell">
         <h1 className="pixel-heading brand-title" style={{ fontSize: 16 }}>
-          Elemental Arena
+          Two-Base Arena
         </h1>
         <div className="card">
           <p>You're not in this match (it may have restarted).</p>
@@ -138,90 +130,28 @@ export default function Game1() {
     );
   }
 
-  const shop = me.shopId ? getShopById(me.shopId) : null;
-  const shopItems = shop ? getShopItems(shop) : [];
-  const unlockedAbilityObjs = me.unlockedAbilities
-    .map((abilityName) => ALL_ABILITIES.find((a) => a.name === abilityName))
-    .filter(Boolean);
-
-  const socket = getSocket();
-
-  const handleBuy = (item) => {
-    setActionError(null);
-    socket.emit('arena:shop-buy', { abilityName: item.name }, (res) => {
-      if (!res?.ok) {
-        setActionError(res?.error || 'Could not start that purchase.');
-        return;
-      }
-      setPending({ abilityName: item.name, progress: 0, unlockCost: item.unlockCost });
-      setCurrentQuestion(res.question);
-    });
-  };
-
-  const handleAnswer = (answerIndex) => {
-    socket.emit('arena:answer', { answerIndex }, (res) => {
-      if (!res?.ok) {
-        setActionError(res?.error || 'Something went wrong.');
-        setCurrentQuestion(null);
-        setPending(null);
-        return;
-      }
-      if (res.unlocked) {
-        setLastUnlock(res.abilityName);
-        setTimeout(() => setLastUnlock(null), 2500);
-        setCurrentQuestion(null);
-        setPending(null);
-        return;
-      }
-      setPending((prev) => (prev ? { ...prev, progress: res.progress ?? prev.progress } : prev));
-      setCurrentQuestion(res.nextQuestion || null);
-    });
-  };
-
-  const handleCast = (abilityName) => {
-    setActionError(null);
-    socket.emit('arena:cast-ability', { abilityName }, (res) => {
-      if (!res?.ok) setActionError(res?.error || 'Could not use that ability.');
-    });
-  };
-
-  const prepSecondsLeft = Math.max(0, Math.round((snapshot.prepEndsAt - now) / 1000));
-  const winner = snapshot.phase === 'over' ? snapshot.players.find((p) => p.id === snapshot.winnerId) : null;
+  const myTeam = getTeamById(me.team);
 
   return (
     <div className="game1-page">
       <h1 className="pixel-heading" style={{ fontSize: 16 }}>
-        Elemental Arena
+        Two-Base Arena
       </h1>
       <p className="game1-hint">
-        Explore the map and visit shops to unlock items by answering questions —
-        stronger items take more correct answers. Once the timer runs out, battle begins.
+        Move with WASD/arrows. Press Space to punch a nearby enemy — 3 hits disables them and
+        sends them back to their barracks. You can't punch through walls or buildings, and
+        punching is useless against machines.
       </p>
-
-      <div className={`phase-banner ${snapshot.phase === 'battle' ? 'battle' : ''}`}>
-        {snapshot.phase === 'prep' && <span>🛒 Prep phase — shop and get ready: {prepSecondsLeft}s left</span>}
-        {snapshot.phase === 'battle' && <span>⚔️ Battle! Attacks are live.</span>}
-        {snapshot.phase === 'over' && (
-          <span>🏆 {winner ? winner.name : 'Someone'} wins!</span>
-        )}
-      </div>
 
       <div className="game-world">
         <GameCanvas />
-        {snapshot.phase === 'over' && (
-          <div className="game-over-overlay">
-            <p className="pixel-heading" style={{ fontSize: 14 }}>
-              🏆 {winner ? winner.name : 'Someone'} wins!
-            </p>
-            <Link className="btn btn-primary" to="/join">
-              Back to Lobby
-            </Link>
-          </div>
-        )}
       </div>
 
-      {lastUnlock && <div className="unlock-toast">Unlocked: {lastUnlock}!</div>}
-      {actionError && <div className="unlock-toast" style={{ background: '#8a2f2f' }}>{actionError}</div>}
+      {actionError && (
+        <div className="unlock-toast" style={{ background: '#8a2f2f' }}>
+          {actionError}
+        </div>
+      )}
 
       <div className="player-panels">
         <div className="player-panel" style={{ '--player-color': toHex(me.color) }}>
@@ -229,35 +159,28 @@ export default function Game1() {
             <span className="player-color-dot" />
             {me.name} (you)
           </div>
-          <HUD health={me.health} maxHealth={me.maxHealth} energy={me.energy} maxEnergy={me.maxEnergy} />
-          <AbilityBar abilities={unlockedAbilityObjs} energy={me.energy} onCast={handleCast} />
-
-          {currentQuestion ? (
-            <QuestionModal
-              question={currentQuestion.question}
-              answers={currentQuestion.answers}
-              onAnswer={handleAnswer}
-            />
-          ) : (
-            shop && <ShopPanel shop={shop} items={shopItems} ownedNames={me.unlockedAbilities} onBuy={handleBuy} />
-          )}
-
-          {pending && currentQuestion && (
-            <p style={{ fontSize: 12, opacity: 0.7, margin: 0 }}>
-              Unlocking {pending.abilityName}: {pending.progress}/{pending.unlockCost} correct
-            </p>
-          )}
+          <HUD
+            teamName={myTeam.name}
+            teamColor={toHex(myTeam.color)}
+            hitsTaken={me.hitsTaken}
+            disabled={me.disabled}
+            respawnMsLeft={me.respawnMsLeft}
+          />
         </div>
 
         {others.length > 0 && (
           <div className="player-panel" style={{ '--player-color': '#3a3a4a' }}>
             <div className="player-panel-label">Other players ({others.length})</div>
             <ul style={{ listStyle: 'none', padding: 0, margin: 0, display: 'flex', flexDirection: 'column', gap: 8 }}>
-              {others.map((p) => (
-                <li key={p.id}>
-                  <span style={{ color: toHex(p.color) }}>●</span> {p.name} — {Math.round(p.health)}/{p.maxHealth} HP
-                </li>
-              ))}
+              {others.map((p) => {
+                const team = getTeamById(p.team);
+                return (
+                  <li key={p.id}>
+                    <span style={{ color: toHex(p.color) }}>●</span> {p.name} — {team?.name}
+                    {p.disabled ? ' (respawning)' : ` — ${p.hitsTaken}/3 hits`}
+                  </li>
+                );
+              })}
             </ul>
           </div>
         )}

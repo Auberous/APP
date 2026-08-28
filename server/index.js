@@ -59,18 +59,6 @@ io.on('connection', (socket) => {
     io.to(result.room.code).emit('room:players-updated', { players });
   });
 
-  socket.on('teacher:start-battle', (_payload, callback) => {
-    const code = socket.data.roomCode;
-    const room = code ? getRoom(code) : null;
-    if (!room || room.teacherId !== socket.id) {
-      callback?.({ ok: false, error: 'Not your room.' });
-      return;
-    }
-    room.match?.startBattleNow();
-    io.to(code).emit('battle:started');
-    callback?.({ ok: true });
-  });
-
   // --- arena (in-match) events --------------------------------------
 
   socket.on('arena:enter', (_payload, callback) => {
@@ -93,35 +81,17 @@ io.on('connection', (socket) => {
     room?.match?.setInput(socket.id, input);
   });
 
-  socket.on('arena:cast-ability', ({ abilityName } = {}, callback) => {
+  socket.on('arena:punch', (_payload, callback) => {
     const room = getRoom(socket.data.roomCode);
     if (!room?.match) {
       callback?.({ ok: false, error: 'No active match.' });
       return;
     }
-    const result = room.match.castAbility(socket.id, abilityName);
+    const result = room.match.punch(socket.id);
     callback?.(result);
     if (result.ok && result.effect) {
       io.to(room.code).emit('arena:effect', { effect: result.effect });
     }
-  });
-
-  socket.on('arena:shop-buy', ({ abilityName } = {}, callback) => {
-    const room = getRoom(socket.data.roomCode);
-    if (!room?.match) {
-      callback?.({ ok: false, error: 'No active match.' });
-      return;
-    }
-    callback?.(room.match.startShopPurchase(socket.id, abilityName));
-  });
-
-  socket.on('arena:answer', ({ answerIndex } = {}, callback) => {
-    const room = getRoom(socket.data.roomCode);
-    if (!room?.match) {
-      callback?.({ ok: false, error: 'No active match.' });
-      return;
-    }
-    callback?.(room.match.answerQuestion(socket.id, answerIndex));
   });
 
   socket.on('disconnect', () => {

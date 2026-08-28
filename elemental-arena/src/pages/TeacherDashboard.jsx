@@ -50,13 +50,6 @@ export default function TeacherDashboard() {
     console.log('View Results clicked');
   };
 
-  const handleStartBattle = () => {
-    const socket = getSocket();
-    socket.emit('teacher:start-battle', {}, (res) => {
-      if (!res?.ok) setError(res?.error || 'Could not start the battle.');
-    });
-  };
-
   return (
     <div className="page-shell">
       <h1 className="pixel-heading brand-title" style={{ fontSize: 16 }}>
@@ -87,13 +80,8 @@ export default function TeacherDashboard() {
               ))}
               {players.length === 0 && <li className="roster-empty">Waiting for students to join…</li>}
             </ul>
-
-            <button className="btn btn-primary" onClick={handleStartBattle}>
-              ⚔️ Start Battle Now
-            </button>
             <p className="hint-text">
-              The prep timer (shopping window) starts automatically once the first student enters
-              the arena, and ends on its own after 60s — this just skips the wait.
+              Players are assigned to Red or Blue automatically as they enter the arena.
             </p>
           </>
         )}
