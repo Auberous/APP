@@ -1,8 +1,8 @@
 import Phaser from 'phaser';
 import { gameEvents } from '../gameEvents.js';
 import { calculateDamage } from '../../utils/calculateDamage.js';
-import { ELEMENTS } from '../elements.js';
 import { SHOPS } from '../shops.js';
+import { LOCAL_PLAYERS } from '../players.js';
 
 const TILE_SIZE = 32;
 const GRID_WIDTH = 16;
@@ -10,10 +10,7 @@ const GRID_HEIGHT = 10;
 
 const PLAYER_SPEED = 140;
 const ATTACK_RANGE = TILE_SIZE * 1.75;
-const ENEMY_ATTACK_RANGE = TILE_SIZE * 1.5;
-const ENEMY_DAMAGE = 8;
-const ENEMY_MAX_HEALTH = 100;
-const SHOP_RADIUS = TILE_SIZE * 1.4;
+const SHOP_RADIUS = TILE_SIZE * 1.8;
 
 const FACING_OFFSET = {
   up: { x: 0, y: -1 },
@@ -22,13 +19,17 @@ const FACING_OFFSET = {
   right: { x: 1, y: 0 },
 };
 
+const CONTROL_KEYS = {
+  wasd: { left: 'A', right: 'D', up: 'W', down: 'S' },
+  arrows: { left: 'LEFT', right: 'RIGHT', up: 'UP', down: 'DOWN' },
+};
+
 export class ArenaScene extends Phaser.Scene {
   constructor() {
     super('ArenaScene');
-    this.facing = 'down';
-    this.enemyHealth = ENEMY_MAX_HEALTH;
+    this.phase = 'prep';
     this.blockTiles = new Set();
-    this.currentShopId = null;
+    this.players = {};
   }
 
   preload() {
@@ -41,58 +42,49 @@ export class ArenaScene extends Phaser.Scene {
     this.drawGround();
 
     this.blocks = this.physics.add.staticGroup();
+    this.playerGroup = this.physics.add.group();
 
-    this.player = this.physics.add.sprite(
-      TILE_SIZE * 3,
-      TILE_SIZE * 5,
-      'player'
-    );
-    this.player.setCollideWorldBounds(true);
-    this.player.setSize(TILE_SIZE * 0.7, TILE_SIZE * 0.7);
+    this.keySets = {
+      wasd: this.input.keyboard.addKeys('W,A,S,D'),
+      arrows: this.input.keyboard.createCursorKeys(),
+    };
 
-    this.enemy = this.physics.add.staticSprite(
-      TILE_SIZE * 12,
-      TILE_SIZE * 5,
-      'enemy'
-    );
-    this.enemy.element = ELEMENTS.SHADOW;
+    LOCAL_PLAYERS.forEach((config) => this.spawnPlayer(config));
 
-    this.physics.add.collider(this.player, this.blocks);
+    this.physics.add.collider(this.playerGroup, this.playerGroup);
+    this.physics.add.collider(this.playerGroup, this.blocks);
 
     this.drawShops();
 
-    this.enemyHealthBarBg = this.add.rectangle(0, 0, TILE_SIZE, 5, 0x220000);
-    this.enemyHealthBarFill = this.add.rectangle(0, 0, TILE_SIZE, 5, 0xff3b3b);
-    this.updateEnemyHealthBar();
+    this.handleCastAbility = ({ playerId, ability }) => this.castAbility(playerId, ability);
+    this.handlePhaseChanged = ({ phase }) => {
+      this.phase = phase;
+    };
+    this.handleHealthChanged = ({ playerId, health, maxHealth }) =>
+      this.setPlayerHealth(playerId, health, maxHealth);
 
-    this.floatingText = null;
-
-    this.cursors = this.input.keyboard.createCursorKeys();
-    this.wasd = this.input.keyboard.addKeys('W,A,S,D');
-
-    this.enemyAttackTimer = this.time.addEvent({
-      delay: 2600,
-      loop: true,
-      callback: () => this.tryEnemyAttack(),
-    });
-
-    this.handleCastAbility = (payload) => this.castAbility(payload.ability);
     gameEvents.on('cast-ability', this.handleCastAbility);
+    gameEvents.on('phase-changed', this.handlePhaseChanged);
+    gameEvents.on('health-changed', this.handleHealthChanged);
 
     this.events.once('shutdown', () => {
       gameEvents.off('cast-ability', this.handleCastAbility);
-      this.enemyAttackTimer.remove();
+      gameEvents.off('phase-changed', this.handlePhaseChanged);
+      gameEvents.off('health-changed', this.handleHealthChanged);
     });
   }
 
   update() {
-    this.handleMovement();
+    LOCAL_PLAYERS.forEach((config) => this.handleMovement(config));
     this.checkShopZones();
-    this.enemyHealthBarBg.setPosition(this.enemy.x, this.enemy.y - TILE_SIZE * 0.9);
-    this.enemyHealthBarFill.setPosition(
-      this.enemy.x - TILE_SIZE / 2 + this.enemyHealthBarFill.width / 2,
-      this.enemy.y - TILE_SIZE * 0.9
-    );
+    LOCAL_PLAYERS.forEach((config) => {
+      const player = this.players[config.id];
+      player.healthBarBg.setPosition(player.sprite.x, player.sprite.y - TILE_SIZE * 0.9);
+      player.healthBarFill.setPosition(
+        player.sprite.x - TILE_SIZE / 2 + player.healthBarFill.width / 2,
+        player.sprite.y - TILE_SIZE * 0.9
+      );
+    });
   }
 
   // --- setup helpers -------------------------------------------------
@@ -109,24 +101,6 @@ export class ArenaScene extends Phaser.Scene {
     g.generateTexture('grass', TILE_SIZE, TILE_SIZE);
     g.clear();
 
-    // Player (blue pixel character)
-    g.fillStyle(0x2f6fed, 1);
-    g.fillRect(4, 4, TILE_SIZE - 8, TILE_SIZE - 8);
-    g.fillStyle(0xdfe9ff, 1);
-    g.fillRect(10, 12, 4, 4);
-    g.fillRect(18, 12, 4, 4);
-    g.generateTexture('player', TILE_SIZE, TILE_SIZE);
-    g.clear();
-
-    // Enemy dummy (dark red pixel golem)
-    g.fillStyle(0x8a2f2f, 1);
-    g.fillRect(2, 2, TILE_SIZE - 4, TILE_SIZE - 4);
-    g.fillStyle(0xffcf5c, 1);
-    g.fillRect(9, 11, 5, 5);
-    g.fillRect(18, 11, 5, 5);
-    g.generateTexture('enemy', TILE_SIZE, TILE_SIZE);
-    g.clear();
-
     // Buildable block
     g.fillStyle(0x8d7355, 1);
     g.fillRect(0, 0, TILE_SIZE, TILE_SIZE);
@@ -134,6 +108,17 @@ export class ArenaScene extends Phaser.Scene {
     g.fillRect(0, TILE_SIZE - 6, TILE_SIZE, 6);
     g.generateTexture('block', TILE_SIZE, TILE_SIZE);
     g.clear();
+
+    // One pixel-art character texture per player, tinted by their color.
+    LOCAL_PLAYERS.forEach((config) => {
+      g.fillStyle(config.color, 1);
+      g.fillRect(4, 4, TILE_SIZE - 8, TILE_SIZE - 8);
+      g.fillStyle(0xffffff, 0.9);
+      g.fillRect(10, 12, 4, 4);
+      g.fillRect(18, 12, 4, 4);
+      g.generateTexture(`player-${config.id}`, TILE_SIZE, TILE_SIZE);
+      g.clear();
+    });
 
     // Shop marker (one texture per shop, tinted by shop.color) — a simple
     // pixel-art tent/stall shape.
@@ -147,6 +132,18 @@ export class ArenaScene extends Phaser.Scene {
     });
 
     g.destroy();
+  }
+
+  drawGround() {
+    for (let row = 0; row < GRID_HEIGHT; row += 1) {
+      for (let col = 0; col < GRID_WIDTH; col += 1) {
+        this.add.image(
+          col * TILE_SIZE + TILE_SIZE / 2,
+          row * TILE_SIZE + TILE_SIZE / 2,
+          'grass'
+        );
+      }
+    }
   }
 
   drawShops() {
@@ -166,113 +163,158 @@ export class ArenaScene extends Phaser.Scene {
     });
   }
 
-  drawGround() {
-    for (let row = 0; row < GRID_HEIGHT; row += 1) {
-      for (let col = 0; col < GRID_WIDTH; col += 1) {
-        this.add.image(
-          col * TILE_SIZE + TILE_SIZE / 2,
-          row * TILE_SIZE + TILE_SIZE / 2,
-          'grass'
-        );
-      }
-    }
+  spawnPlayer(config) {
+    const x = config.spawn.col * TILE_SIZE + TILE_SIZE / 2;
+    const y = config.spawn.row * TILE_SIZE + TILE_SIZE / 2;
+    const sprite = this.physics.add.sprite(x, y, `player-${config.id}`);
+    // Group.add() resets several body flags to the group's defaults, so
+    // configure the body *after* adding it to the group, not before.
+    this.playerGroup.add(sprite);
+    sprite.setCollideWorldBounds(true);
+    sprite.setSize(TILE_SIZE * 0.7, TILE_SIZE * 0.7);
+    sprite.setBounce(0.1, 0.1);
+
+    const healthBarBg = this.add.rectangle(x, y, TILE_SIZE, 5, 0x220000);
+    const healthBarFill = this.add.rectangle(x, y, TILE_SIZE, 5, 0x3ddc6a);
+
+    this.add
+      .text(x, y + TILE_SIZE * 0.75, config.label, {
+        fontFamily: 'monospace',
+        fontSize: '9px',
+        color: '#f2f2f7',
+      })
+      .setOrigin(0.5, 0);
+
+    this.players[config.id] = {
+      config,
+      sprite,
+      facing: 'down',
+      currentShopId: null,
+      healthBarBg,
+      healthBarFill,
+    };
   }
 
   // --- input / movement ------------------------------------------------
 
-  handleMovement() {
-    const left = this.cursors.left.isDown || this.wasd.A.isDown;
-    const right = this.cursors.right.isDown || this.wasd.D.isDown;
-    const up = this.cursors.up.isDown || this.wasd.W.isDown;
-    const down = this.cursors.down.isDown || this.wasd.S.isDown;
+  handleMovement(config) {
+    const player = this.players[config.id];
+    const keys = CONTROL_KEYS[config.controls];
+    const keySet = this.keySets[config.controls];
+
+    const isDown = (name) =>
+      config.controls === 'arrows' ? keySet[name.toLowerCase()].isDown : keySet[keys[name.toLowerCase()]].isDown;
 
     let vx = 0;
     let vy = 0;
-    if (left) vx -= 1;
-    if (right) vx += 1;
-    if (up) vy -= 1;
-    if (down) vy += 1;
+    if (isDown('left')) vx -= 1;
+    if (isDown('right')) vx += 1;
+    if (isDown('up')) vy -= 1;
+    if (isDown('down')) vy += 1;
 
     if (vx !== 0 || vy !== 0) {
       const length = Math.hypot(vx, vy);
-      this.player.setVelocity((vx / length) * PLAYER_SPEED, (vy / length) * PLAYER_SPEED);
+      player.sprite.setVelocity((vx / length) * PLAYER_SPEED, (vy / length) * PLAYER_SPEED);
       if (Math.abs(vx) > Math.abs(vy)) {
-        this.facing = vx > 0 ? 'right' : 'left';
+        player.facing = vx > 0 ? 'right' : 'left';
       } else if (vy !== 0) {
-        this.facing = vy > 0 ? 'down' : 'up';
+        player.facing = vy > 0 ? 'down' : 'up';
       }
     } else {
-      this.player.setVelocity(0, 0);
+      player.sprite.setVelocity(0, 0);
     }
   }
 
   // --- shops -------------------------------------------------------------
 
   checkShopZones() {
-    const nearShop = SHOPS.find((shop) => {
-      const x = shop.tile.col * TILE_SIZE + TILE_SIZE / 2;
-      const y = shop.tile.row * TILE_SIZE + TILE_SIZE / 2;
-      return Phaser.Math.Distance.Between(this.player.x, this.player.y, x, y) <= SHOP_RADIUS;
-    });
-    const nextShopId = nearShop ? nearShop.id : null;
+    LOCAL_PLAYERS.forEach((config) => {
+      const player = this.players[config.id];
+      const nearShop = SHOPS.find((shop) => {
+        const x = shop.tile.col * TILE_SIZE + TILE_SIZE / 2;
+        const y = shop.tile.row * TILE_SIZE + TILE_SIZE / 2;
+        return (
+          Phaser.Math.Distance.Between(player.sprite.x, player.sprite.y, x, y) <= SHOP_RADIUS
+        );
+      });
+      const nextShopId = nearShop ? nearShop.id : null;
 
-    if (nextShopId !== this.currentShopId) {
-      this.currentShopId = nextShopId;
-      if (nextShopId) {
-        gameEvents.emit('shop-entered', { shopId: nextShopId });
-      } else {
-        gameEvents.emit('shop-exited', {});
+      if (nextShopId !== player.currentShopId) {
+        player.currentShopId = nextShopId;
+        gameEvents.emit('shop-zone', { playerId: config.id, shopId: nextShopId });
       }
-    }
+    });
   }
 
   // --- ability casting ---------------------------------------------------
 
-  castAbility(ability) {
+  castAbility(playerId, ability) {
     if (!ability) return;
+    const player = this.players[playerId];
+    if (!player) return;
 
     if (ability.type === 'attack') {
-      this.castAttack(ability);
+      this.castAttack(player, ability);
     } else if (ability.type === 'defend') {
-      this.castDefend(ability);
+      this.castDefend(player, ability);
     } else if (ability.type === 'build') {
-      this.castBuild(ability);
+      this.castBuild(player, ability);
     }
   }
 
-  castAttack(ability) {
-    const distance = Phaser.Math.Distance.Between(
-      this.player.x,
-      this.player.y,
-      this.enemy.x,
-      this.enemy.y
-    );
+  findNearestOpponent(player) {
+    let nearest = null;
+    let nearestDistance = Infinity;
+    LOCAL_PLAYERS.forEach((config) => {
+      if (config.id === player.config.id) return;
+      const other = this.players[config.id];
+      const distance = Phaser.Math.Distance.Between(
+        player.sprite.x,
+        player.sprite.y,
+        other.sprite.x,
+        other.sprite.y
+      );
+      if (distance < nearestDistance) {
+        nearestDistance = distance;
+        nearest = other;
+      }
+    });
+    return nearest ? { player: nearest, distance: nearestDistance } : null;
+  }
 
-    if (distance > ATTACK_RANGE) {
-      this.showFloatingText(this.player.x, this.player.y - 24, 'Too far away!', '#ffb84d');
+  castAttack(player, ability) {
+    if (this.phase !== 'battle') {
+      this.showFloatingText(
+        player.sprite.x,
+        player.sprite.y - 24,
+        "Battle hasn't started yet!",
+        '#ffb84d'
+      );
       return;
     }
 
-    const damage = calculateDamage(ability, { element: this.enemy.element, health: this.enemyHealth });
-    this.enemyHealth = Math.max(0, this.enemyHealth - damage);
-    this.updateEnemyHealthBar();
+    const target = this.findNearestOpponent(player);
+    if (!target || target.distance > ATTACK_RANGE) {
+      this.showFloatingText(player.sprite.x, player.sprite.y - 24, 'No target in range!', '#ffb84d');
+      return;
+    }
+
+    const damage = calculateDamage(ability, { element: null });
+    gameEvents.emit('player-damaged', { playerId: target.player.config.id, amount: damage });
+
     this.tweens.add({
-      targets: this.enemy,
+      targets: target.player.sprite,
       alpha: 0.3,
       duration: 80,
       yoyo: true,
     });
-    this.showFloatingText(this.enemy.x, this.enemy.y - 24, `-${damage}`, '#ff5c5c');
-
-    if (this.enemyHealth <= 0) {
-      this.defeatEnemy();
-    }
+    this.showFloatingText(target.player.sprite.x, target.player.sprite.y - 24, `-${damage}`, '#ff5c5c');
   }
 
-  castDefend(ability) {
+  castDefend(player, ability) {
     const shield = this.add.circle(
-      this.player.x,
-      this.player.y,
+      player.sprite.x,
+      player.sprite.y,
       TILE_SIZE * 0.75,
       0x7fd8ff,
       0.25
@@ -282,21 +324,21 @@ export class ArenaScene extends Phaser.Scene {
       targets: shield,
       duration: ability.duration,
       alpha: 0,
-      onUpdate: () => shield.setPosition(this.player.x, this.player.y),
+      onUpdate: () => shield.setPosition(player.sprite.x, player.sprite.y),
       onComplete: () => shield.destroy(),
     });
-    this.showFloatingText(this.player.x, this.player.y - 24, 'Shielded!', '#7fd8ff');
+    this.showFloatingText(player.sprite.x, player.sprite.y - 24, 'Shielded!', '#7fd8ff');
   }
 
-  castBuild(ability) {
-    const offset = FACING_OFFSET[this.facing];
-    const col = Math.round(this.player.x / TILE_SIZE) + offset.x;
-    const row = Math.round(this.player.y / TILE_SIZE) + offset.y;
+  castBuild(player, ability) {
+    const offset = FACING_OFFSET[player.facing];
+    const col = Math.round(player.sprite.x / TILE_SIZE) + offset.x;
+    const row = Math.round(player.sprite.y / TILE_SIZE) + offset.y;
     const key = `${col},${row}`;
 
     const inBounds = col >= 0 && col < GRID_WIDTH && row >= 0 && row < GRID_HEIGHT;
     if (!inBounds || this.blockTiles.has(key)) {
-      this.showFloatingText(this.player.x, this.player.y - 24, "Can't build there", '#ff9c9c');
+      this.showFloatingText(player.sprite.x, player.sprite.y - 24, "Can't build there", '#ff9c9c');
       return;
     }
 
@@ -310,48 +352,13 @@ export class ArenaScene extends Phaser.Scene {
     this.showFloatingText(block.x, block.y - 24, ability.name, '#c9a679');
   }
 
-  // --- enemy AI ---------------------------------------------------------
-
-  tryEnemyAttack() {
-    if (this.enemyHealth <= 0) return;
-    const distance = Phaser.Math.Distance.Between(
-      this.player.x,
-      this.player.y,
-      this.enemy.x,
-      this.enemy.y
-    );
-    if (distance > ENEMY_ATTACK_RANGE) return;
-
-    this.tweens.add({
-      targets: this.enemy,
-      scale: 1.15,
-      duration: 100,
-      yoyo: true,
-    });
-    gameEvents.emit('player-damaged', { amount: ENEMY_DAMAGE });
-    this.showFloatingText(this.player.x, this.player.y - 24, `-${ENEMY_DAMAGE}`, '#ff5c5c');
-  }
-
-  defeatEnemy() {
-    gameEvents.emit('enemy-defeated');
-    this.enemy.setVisible(false);
-    this.enemyHealthBarBg.setVisible(false);
-    this.enemyHealthBarFill.setVisible(false);
-
-    this.time.delayedCall(3000, () => {
-      this.enemyHealth = ENEMY_MAX_HEALTH;
-      this.enemy.setVisible(true);
-      this.enemyHealthBarBg.setVisible(true);
-      this.enemyHealthBarFill.setVisible(true);
-      this.updateEnemyHealthBar();
-    });
-  }
-
   // --- helpers ------------------------------------------------------------
 
-  updateEnemyHealthBar() {
-    const ratio = Phaser.Math.Clamp(this.enemyHealth / ENEMY_MAX_HEALTH, 0, 1);
-    this.enemyHealthBarFill.width = TILE_SIZE * ratio;
+  setPlayerHealth(playerId, health, maxHealth) {
+    const player = this.players[playerId];
+    if (!player) return;
+    const ratio = Phaser.Math.Clamp(health / maxHealth, 0, 1);
+    player.healthBarFill.width = TILE_SIZE * ratio;
   }
 
   showFloatingText(x, y, message, color) {

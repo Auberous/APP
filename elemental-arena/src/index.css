@@ -14,9 +14,65 @@ a {
 }
 
 .game1-page {
-  max-width: 640px;
+  max-width: 960px;
   margin: 0 auto;
   padding: 16px;
+}
+
+.phase-banner {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 10px 14px;
+  margin-bottom: 12px;
+  border-radius: 8px;
+  background: #1b1b26;
+  border: 1px solid #3a3a4a;
+}
+
+.phase-banner.battle {
+  border-color: #d94b4b;
+  background: #2a1414;
+}
+
+.phase-banner button {
+  margin-left: auto;
+  padding: 6px 12px;
+  border-radius: 6px;
+  border: 1px solid #3a3a4a;
+  background: #2f6fed;
+  color: #fff;
+  cursor: pointer;
+}
+
+.player-panels {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 16px;
+  margin-top: 16px;
+}
+
+.player-panel {
+  flex: 1 1 320px;
+  min-width: 280px;
+  padding: 12px;
+  border-radius: 8px;
+  border: 2px solid var(--player-color, #3a3a4a);
+}
+
+.player-panel-label {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-weight: bold;
+  margin-bottom: 8px;
+}
+
+.player-color-dot {
+  width: 10px;
+  height: 10px;
+  border-radius: 50%;
+  background: var(--player-color, #3a3a4a);
 }
 
 .game-world {
@@ -123,39 +179,38 @@ a {
 }
 
 .question-modal {
-  position: fixed;
-  inset: 0;
   display: flex;
   flex-direction: column;
-  align-items: center;
-  justify-content: center;
-  gap: 12px;
-  background: rgba(10, 10, 16, 0.85);
-  z-index: 10;
+  gap: 10px;
+  padding: 12px 14px;
+  border: 1px solid #3a3a4a;
+  border-radius: 8px;
+  background: #1b1b26;
 }
 
 .question-modal p {
-  font-size: 20px;
-  max-width: 480px;
-  text-align: center;
+  margin: 0;
+  font-size: 15px;
 }
 
 .question-modal ul {
   list-style: none;
   padding: 0;
+  margin: 0;
   display: grid;
-  grid-template-columns: repeat(2, minmax(140px, 1fr));
-  gap: 10px;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 8px;
 }
 
 .question-modal button {
   width: 100%;
-  padding: 10px 14px;
+  padding: 8px 10px;
   border-radius: 6px;
   border: 1px solid #3a3a4a;
   background: #22222e;
   color: #f2f2f7;
   cursor: pointer;
+  font-size: 13px;
 }
 
 .game1-hint {

@@ -1,9 +1,13 @@
 import { ELEMENTS } from './elements.js';
 
 // Ability `type` drives what the world does when it's cast:
-//   'attack' — damages the nearby enemy
+//   'attack' — damages a nearby opponent
 //   'defend' — grants a brief shield that reduces incoming damage
 //   'build'  — places a block in front of the player
+//
+// `unlockCost` is how many questions must be answered correctly at a shop
+// to unlock it — scaled with how powerful/durable the ability is, so the
+// strongest options take the most practice to earn.
 export const abilities = [
   {
     name: 'Fireball',
@@ -11,6 +15,7 @@ export const abilities = [
     type: 'attack',
     cost: 20,
     damage: 25,
+    unlockCost: 2,
     description: 'Hurl a blazing ball of fire at the target.',
   },
   {
@@ -19,6 +24,7 @@ export const abilities = [
     type: 'attack',
     cost: 25,
     damage: 20,
+    unlockCost: 2,
     description: 'Summon a wave that crashes into the target.',
   },
   {
@@ -27,6 +33,7 @@ export const abilities = [
     type: 'attack',
     cost: 30,
     damage: 30,
+    unlockCost: 3,
     description: 'Strike the target with a bolt of lightning.',
   },
   {
@@ -35,6 +42,7 @@ export const abilities = [
     type: 'attack',
     cost: 20,
     damage: 18,
+    unlockCost: 1,
     description: 'Dark tendrils grasp and drain the target.',
   },
   {
@@ -44,6 +52,7 @@ export const abilities = [
     cost: 15,
     shieldPercent: 50,
     duration: 4000,
+    unlockCost: 2,
     description: 'Harden your skin, halving incoming damage briefly.',
   },
   {
@@ -53,6 +62,7 @@ export const abilities = [
     cost: 20,
     shieldPercent: 65,
     duration: 4000,
+    unlockCost: 3,
     description: 'Wrap yourself in mist, deflecting most attacks.',
   },
   {
@@ -62,6 +72,7 @@ export const abilities = [
     cost: 18,
     shieldPercent: 40,
     duration: 3000,
+    unlockCost: 1,
     description: 'A swirling wind buffer softens the next hits.',
   },
   {
@@ -71,6 +82,7 @@ export const abilities = [
     cost: 25,
     shieldPercent: 75,
     duration: 3000,
+    unlockCost: 3,
     description: 'Fade into shadow to avoid most damage.',
   },
   {
@@ -78,6 +90,7 @@ export const abilities = [
     element: ELEMENTS.EARTH,
     type: 'build',
     cost: 15,
+    unlockCost: 2,
     description: 'Raise a block of solid stone in front of you.',
   },
   {
@@ -85,6 +98,7 @@ export const abilities = [
     element: ELEMENTS.WATER,
     type: 'build',
     cost: 15,
+    unlockCost: 2,
     description: 'Freeze a block of ice in front of you.',
   },
   {
@@ -92,6 +106,7 @@ export const abilities = [
     element: ELEMENTS.EARTH,
     type: 'build',
     cost: 12,
+    unlockCost: 1,
     description: 'Grow a tangle of roots into a barrier.',
   },
   {
@@ -99,12 +114,12 @@ export const abilities = [
     element: ELEMENTS.FIRE,
     type: 'build',
     cost: 20,
-    description: 'Cool molten rock into a sturdy obsidian block.',
+    unlockCost: 3,
+    description: 'Cool molten rock into a sturdy, hard-to-break obsidian block.',
   },
 ];
 
-// Picks a random ability the player hasn't unlocked yet (used to decide
-// what a correct answer rewards). Returns null once everything is unlocked.
+// Picks a random ability the player hasn't unlocked yet.
 export function pickRandomAbility(unlockedNames = []) {
   const locked = abilities.filter((ability) => !unlockedNames.includes(ability.name));
   if (locked.length === 0) return null;
