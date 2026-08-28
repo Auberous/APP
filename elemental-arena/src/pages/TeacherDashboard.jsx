@@ -1,4 +1,5 @@
 import { useEffect, useState } from 'react';
+import { Link } from 'react-router-dom';
 import { getSocket } from '../net/socket.js';
 
 export default function TeacherDashboard() {
@@ -57,39 +58,52 @@ export default function TeacherDashboard() {
   };
 
   return (
-    <div>
-      <h1>Teacher Dashboard</h1>
+    <div className="page-shell">
+      <h1 className="pixel-heading brand-title" style={{ fontSize: 16 }}>
+        Teacher Dashboard
+      </h1>
 
-      <button onClick={handleCreateGame} disabled={status === 'creating'}>
-        Create Game
-      </button>
-      <button onClick={handleViewResults}>View Results</button>
-
-      {error && <p style={{ color: '#ff5c5c' }}>{error}</p>}
-
-      {roomCode && status !== 'closed' && (
-        <div>
-          <p>
-            Room code: <strong style={{ fontSize: 28, letterSpacing: 4 }}>{roomCode}</strong>
-          </p>
-          <p>Students join at /join with this code.</p>
-          <h3>Players ({players.length})</h3>
-          <ul>
-            {players.map((p) => (
-              <li key={p.id}>{p.name}</li>
-            ))}
-            {players.length === 0 && <li>Waiting for students to join...</li>}
-          </ul>
-          <button onClick={handleStartBattle}>Start Battle Now</button>
-          <p style={{ fontSize: 12, opacity: 0.7 }}>
-            The prep timer (shopping window) starts automatically once the first
-            student enters the arena, and ends on its own after 60s — this just
-            skips the wait.
-          </p>
+      <div className="card">
+        <div className="btn-row">
+          <button className="btn btn-primary" onClick={handleCreateGame} disabled={status === 'creating'}>
+            {status === 'creating' ? 'Creating...' : 'Create Game'}
+          </button>
+          <button className="btn" onClick={handleViewResults}>
+            View Results
+          </button>
         </div>
-      )}
 
-      {status === 'closed' && <p>This game's room was closed.</p>}
+        {error && <p className="status-error">{error}</p>}
+
+        {roomCode && status !== 'closed' && (
+          <>
+            <div className="room-code-display">{roomCode}</div>
+            <p className="hint-text">Students join at /join with this code.</p>
+
+            <h2>Players ({players.length})</h2>
+            <ul className="roster-list">
+              {players.map((p) => (
+                <li key={p.id}>{p.name}</li>
+              ))}
+              {players.length === 0 && <li className="roster-empty">Waiting for students to join…</li>}
+            </ul>
+
+            <button className="btn btn-primary" onClick={handleStartBattle}>
+              ⚔️ Start Battle Now
+            </button>
+            <p className="hint-text">
+              The prep timer (shopping window) starts automatically once the first student enters
+              the arena, and ends on its own after 60s — this just skips the wait.
+            </p>
+          </>
+        )}
+
+        {status === 'closed' && <p className="status-error">This game's room was closed.</p>}
+      </div>
+
+      <Link to="/" className="hint-text">
+        ← Back home
+      </Link>
     </div>
   );
 }

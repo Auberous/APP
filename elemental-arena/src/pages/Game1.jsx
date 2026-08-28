@@ -78,29 +78,43 @@ export default function Game1() {
 
   if (!code || !name) {
     return (
-      <div className="game1-page">
-        <h1>Game 1: Elemental Arena</h1>
-        <p>You need to join a game first.</p>
-        <Link to="/join">Go to Join Game</Link>
+      <div className="page-shell">
+        <h1 className="pixel-heading brand-title" style={{ fontSize: 16 }}>
+          Elemental Arena
+        </h1>
+        <div className="card">
+          <p>You need to join a game first.</p>
+          <Link className="btn btn-primary" to="/join">
+            Go to Join Game
+          </Link>
+        </div>
       </div>
     );
   }
 
   if (connectError) {
     return (
-      <div className="game1-page">
-        <h1>Game 1: Elemental Arena</h1>
-        <p style={{ color: '#ff5c5c' }}>{connectError}</p>
-        <Link to="/join">Back to Join Game</Link>
+      <div className="page-shell">
+        <h1 className="pixel-heading brand-title" style={{ fontSize: 16 }}>
+          Elemental Arena
+        </h1>
+        <div className="card">
+          <p className="status-error">{connectError}</p>
+          <Link className="btn btn-primary" to="/join">
+            Back to Join Game
+          </Link>
+        </div>
       </div>
     );
   }
 
   if (!snapshot || !youId) {
     return (
-      <div className="game1-page">
-        <h1>Game 1: Elemental Arena</h1>
-        <p>Connecting...</p>
+      <div className="page-shell">
+        <h1 className="pixel-heading brand-title" style={{ fontSize: 16 }}>
+          Elemental Arena
+        </h1>
+        <p className="hint-text">Connecting…</p>
       </div>
     );
   }
@@ -110,10 +124,16 @@ export default function Game1() {
 
   if (!me) {
     return (
-      <div className="game1-page">
-        <h1>Game 1: Elemental Arena</h1>
-        <p>You're not in this match (it may have restarted).</p>
-        <Link to="/join">Back to Join Game</Link>
+      <div className="page-shell">
+        <h1 className="pixel-heading brand-title" style={{ fontSize: 16 }}>
+          Elemental Arena
+        </h1>
+        <div className="card">
+          <p>You're not in this match (it may have restarted).</p>
+          <Link className="btn btn-primary" to="/join">
+            Back to Join Game
+          </Link>
+        </div>
       </div>
     );
   }
@@ -170,7 +190,9 @@ export default function Game1() {
 
   return (
     <div className="game1-page">
-      <h1>Game 1: Elemental Arena</h1>
+      <h1 className="pixel-heading" style={{ fontSize: 16 }}>
+        Elemental Arena
+      </h1>
       <p className="game1-hint">
         Explore the map and visit shops to unlock items by answering questions —
         stronger items take more correct answers. Once the timer runs out, battle begins.
@@ -188,8 +210,12 @@ export default function Game1() {
         <GameCanvas />
         {snapshot.phase === 'over' && (
           <div className="game-over-overlay">
-            <p>{winner ? winner.name : 'Someone'} wins!</p>
-            <Link to="/join">Back to Lobby</Link>
+            <p className="pixel-heading" style={{ fontSize: 14 }}>
+              🏆 {winner ? winner.name : 'Someone'} wins!
+            </p>
+            <Link className="btn btn-primary" to="/join">
+              Back to Lobby
+            </Link>
           </div>
         )}
       </div>

@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react';
-import { useNavigate } from 'react-router-dom';
+import { useNavigate, Link } from 'react-router-dom';
 import { getSocket } from '../net/socket.js';
 
 export default function JoinGame() {
@@ -50,41 +50,63 @@ export default function JoinGame() {
 
   if (status === 'joined') {
     return (
-      <div>
-        <h1>You're in!</h1>
-        <p>
-          Code <strong>{gameCode.toUpperCase()}</strong>
-        </p>
-        <h3>Players ({players.length})</h3>
-        <ul>
-          {players.map((p) => (
-            <li key={p.id}>{p.name}</li>
-          ))}
-        </ul>
-        <button onClick={handleEnterArena}>Enter Arena</button>
+      <div className="page-shell">
+        <h1 className="pixel-heading brand-title" style={{ fontSize: 16 }}>
+          You're in!
+        </h1>
+        <div className="card">
+          <div className="room-code-display">{gameCode.toUpperCase()}</div>
+
+          <h2>Players ({players.length})</h2>
+          <ul className="roster-list">
+            {players.map((p) => (
+              <li key={p.id}>{p.name}</li>
+            ))}
+          </ul>
+
+          <button className="btn btn-primary" onClick={handleEnterArena}>
+            Enter Arena →
+          </button>
+        </div>
       </div>
     );
   }
 
   return (
-    <div>
-      <h1>Join Game</h1>
-      <input
-        type="text"
-        value={name}
-        onChange={(e) => setName(e.target.value)}
-        placeholder="Your name"
-      />
-      <input
-        type="text"
-        value={gameCode}
-        onChange={(e) => setGameCode(e.target.value)}
-        placeholder="Enter game code"
-      />
-      <button onClick={handleJoin} disabled={!gameCode || !name || status === 'joining'}>
+    <div className="page-shell">
+      <h1 className="pixel-heading brand-title" style={{ fontSize: 16 }}>
         Join Game
-      </button>
-      {error && <p style={{ color: '#ff5c5c' }}>{error}</p>}
+      </h1>
+
+      <div className="card">
+        <input
+          className="text-input"
+          type="text"
+          value={name}
+          onChange={(e) => setName(e.target.value)}
+          placeholder="Your name"
+        />
+        <input
+          className="text-input"
+          type="text"
+          value={gameCode}
+          onChange={(e) => setGameCode(e.target.value)}
+          placeholder="Game code"
+          style={{ textTransform: 'uppercase', letterSpacing: 2 }}
+        />
+        <button
+          className="btn btn-primary"
+          onClick={handleJoin}
+          disabled={!gameCode || !name || status === 'joining'}
+        >
+          {status === 'joining' ? 'Joining...' : 'Join Game'}
+        </button>
+        {error && <p className="status-error">{error}</p>}
+      </div>
+
+      <Link to="/" className="hint-text">
+        ← Back home
+      </Link>
     </div>
   );
 }

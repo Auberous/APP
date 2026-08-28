@@ -87,26 +87,69 @@ export class ArenaScene extends Phaser.Scene {
   generateStaticTextures() {
     const g = this.make.graphics({ x: 0, y: 0, add: false });
 
+    // Plain grass tile.
     g.fillStyle(0x3a9d4f, 1);
     g.fillRect(0, 0, TILE_SIZE, TILE_SIZE);
     g.fillStyle(0x35914a, 1);
     g.fillRect(0, 0, TILE_SIZE, 2);
     g.fillRect(0, 0, 2, TILE_SIZE);
+    g.fillStyle(0x44ac5a, 1);
+    g.fillRect(TILE_SIZE - 6, TILE_SIZE - 10, 2, 6);
+    g.fillRect(6, 8, 2, 5);
     g.generateTexture('grass', TILE_SIZE, TILE_SIZE);
     g.clear();
 
+    // Grass with a small flower — sprinkled in occasionally for variety.
+    g.fillStyle(0x3a9d4f, 1);
+    g.fillRect(0, 0, TILE_SIZE, TILE_SIZE);
+    g.fillStyle(0x35914a, 1);
+    g.fillRect(0, 0, TILE_SIZE, 2);
+    g.fillRect(0, 0, 2, TILE_SIZE);
+    g.fillStyle(0xffd35c, 1);
+    g.fillRect(TILE_SIZE / 2 - 2, TILE_SIZE / 2 - 2, 4, 4);
+    g.fillStyle(0xfff2bd, 1);
+    g.fillRect(TILE_SIZE / 2 - 1, TILE_SIZE / 2 - 1, 2, 2);
+    g.generateTexture('grass-flower', TILE_SIZE, TILE_SIZE);
+    g.clear();
+
+    // Grass with a pebble tuft.
+    g.fillStyle(0x3a9d4f, 1);
+    g.fillRect(0, 0, TILE_SIZE, TILE_SIZE);
+    g.fillStyle(0x35914a, 1);
+    g.fillRect(0, 0, TILE_SIZE, 2);
+    g.fillRect(0, 0, 2, TILE_SIZE);
+    g.fillStyle(0x8d8d7a, 1);
+    g.fillCircle(TILE_SIZE / 2 + 4, TILE_SIZE / 2 + 3, 3);
+    g.fillCircle(TILE_SIZE / 2 - 3, TILE_SIZE / 2 + 5, 2);
+    g.generateTexture('grass-pebble', TILE_SIZE, TILE_SIZE);
+    g.clear();
+
+    // Buildable block (stone, with a highlighted top face).
     g.fillStyle(0x8d7355, 1);
     g.fillRect(0, 0, TILE_SIZE, TILE_SIZE);
+    g.fillStyle(0xa08765, 1);
+    g.fillRect(0, 0, TILE_SIZE, 6);
     g.fillStyle(0x74593d, 1);
     g.fillRect(0, TILE_SIZE - 6, TILE_SIZE, 6);
     g.generateTexture('block', TILE_SIZE, TILE_SIZE);
     g.clear();
 
+    // Shop stalls: a pole, a striped awning, and a counter, tinted by
+    // shop.color.
     SHOPS.forEach((shop) => {
+      g.fillStyle(0x5a4632, 1);
+      g.fillRect(TILE_SIZE / 2 - 2, TILE_SIZE * 0.35, 4, TILE_SIZE * 0.5);
+
       g.fillStyle(shop.color, 1);
-      g.fillTriangle(TILE_SIZE / 2, 0, 0, TILE_SIZE * 0.7, TILE_SIZE, TILE_SIZE * 0.7);
-      g.fillStyle(0xffffff, 0.85);
-      g.fillRect(TILE_SIZE * 0.35, TILE_SIZE * 0.7, TILE_SIZE * 0.3, TILE_SIZE * 0.3);
+      g.fillTriangle(TILE_SIZE / 2, 0, 2, TILE_SIZE * 0.4, TILE_SIZE - 2, TILE_SIZE * 0.4);
+      g.fillStyle(0xffffff, 0.55);
+      g.fillTriangle(TILE_SIZE / 2, 4, TILE_SIZE * 0.3, TILE_SIZE * 0.36, TILE_SIZE * 0.5, TILE_SIZE * 0.36);
+
+      g.fillStyle(0x6b5843, 1);
+      g.fillRect(TILE_SIZE * 0.2, TILE_SIZE * 0.78, TILE_SIZE * 0.6, TILE_SIZE * 0.18);
+      g.fillStyle(0x8a7458, 1);
+      g.fillRect(TILE_SIZE * 0.2, TILE_SIZE * 0.78, TILE_SIZE * 0.6, 3);
+
       g.generateTexture(`shop-${shop.id}`, TILE_SIZE, TILE_SIZE);
       g.clear();
     });
@@ -118,11 +161,24 @@ export class ArenaScene extends Phaser.Scene {
     const key = `player-${color}`;
     if (this.playerTextureCache.has(key)) return key;
     const g = this.make.graphics({ x: 0, y: 0, add: false });
+
+    const dark = Phaser.Display.Color.ValueToColor(color).darken(25).color;
+
+    // Simple pixel-art character: outline, body, a lighter face patch, eyes.
+    g.fillStyle(dark, 1);
+    g.fillRect(3, 5, TILE_SIZE - 6, TILE_SIZE - 8);
     g.fillStyle(color, 1);
-    g.fillRect(4, 4, TILE_SIZE - 8, TILE_SIZE - 8);
-    g.fillStyle(0xffffff, 0.9);
-    g.fillRect(10, 12, 4, 4);
-    g.fillRect(18, 12, 4, 4);
+    g.fillRect(4, 6, TILE_SIZE - 8, TILE_SIZE - 10);
+    g.fillStyle(0xffffff, 0.18);
+    g.fillRect(4, 6, TILE_SIZE - 8, 5);
+
+    g.fillStyle(0xffffff, 0.95);
+    g.fillRect(9, 13, 5, 5);
+    g.fillRect(18, 13, 5, 5);
+    g.fillStyle(0x1a1826, 1);
+    g.fillRect(10, 15, 2, 2);
+    g.fillRect(19, 15, 2, 2);
+
     g.generateTexture(key, TILE_SIZE, TILE_SIZE);
     g.destroy();
     this.playerTextureCache.add(key);
@@ -132,11 +188,9 @@ export class ArenaScene extends Phaser.Scene {
   drawGround() {
     for (let row = 0; row < GRID_HEIGHT; row += 1) {
       for (let col = 0; col < GRID_WIDTH; col += 1) {
-        this.add.image(
-          col * TILE_SIZE + TILE_SIZE / 2,
-          row * TILE_SIZE + TILE_SIZE / 2,
-          'grass'
-        );
+        const roll = Math.random();
+        const key = roll < 0.08 ? 'grass-flower' : roll < 0.16 ? 'grass-pebble' : 'grass';
+        this.add.image(col * TILE_SIZE + TILE_SIZE / 2, row * TILE_SIZE + TILE_SIZE / 2, key);
       }
     }
   }
@@ -145,9 +199,20 @@ export class ArenaScene extends Phaser.Scene {
     SHOPS.forEach((shop) => {
       const x = shop.tile.col * TILE_SIZE + TILE_SIZE / 2;
       const y = shop.tile.row * TILE_SIZE + TILE_SIZE / 2;
-      this.add.image(x, y, `shop-${shop.id}`);
+
+      this.add.ellipse(x, y + TILE_SIZE * 0.42, TILE_SIZE * 0.6, TILE_SIZE * 0.18, 0x000000, 0.25);
+      const stall = this.add.image(x, y, `shop-${shop.id}`);
+      this.tweens.add({
+        targets: stall,
+        y: y - 2,
+        duration: 1400,
+        yoyo: true,
+        repeat: -1,
+        ease: 'Sine.easeInOut',
+      });
+
       this.add
-        .text(x, y - TILE_SIZE * 0.9, shop.name, {
+        .text(x, y - TILE_SIZE * 0.95, shop.name, {
           fontFamily: 'monospace',
           fontSize: '10px',
           color: '#f2f2f7',
