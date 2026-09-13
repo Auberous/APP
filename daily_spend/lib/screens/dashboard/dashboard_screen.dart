@@ -18,10 +18,14 @@ class DashboardScreen extends ConsumerWidget {
     final transactionsAsync = ref.watch(recentTransactionsProvider);
     final household = ref.watch(currentHouseholdProvider).valueOrNull;
     final myUid = ref.watch(authStateProvider).valueOrNull?.uid;
+    final memberNames = ref.watch(householdMemberNamesProvider).valueOrNull;
 
     String memberDisplayName(String uid) {
       if (uid == myUid) return 'You';
-      return 'Partner';
+      // Falls back to "Partner" only while names are still loading —
+      // householdMemberNamesProvider resolves quickly once the household
+      // is known, so this is a brief flash, not a stuck placeholder.
+      return memberNames?[uid] ?? 'Partner';
     }
 
     return Scaffold(

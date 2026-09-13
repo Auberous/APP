@@ -51,12 +51,14 @@
   if that ever needs a "who changed what, when" trail, add it as a
   Cloud Function–only write path with a change log, rather than a direct
   client write.
-- **FCM tokens accumulate and are never pruned.** `addFcmToken` only ever
-  appends (`arrayUnion`); a token for an uninstalled app/dead device
-  stays in `fcmTokens` until FCM itself reports it invalid. Handle
-  `sendEachForMulticast`'s per-token failure results (already logged in
-  `notifications.ts`) by removing tokens that come back
-  `messaging/registration-token-not-registered`.
+- ~~**FCM tokens accumulate and are never pruned.**~~ Fixed —
+  `sendPurchaseNotification` now removes a token from its owner's
+  `fcmTokens` the moment FCM reports it unrecoverable (see
+  `notificationCleanup.ts`'s `staleTokensToRemove`, unit tested). A
+  token can still sit unused between the moment an app is uninstalled
+  and the next purchase notification, since pruning is a side effect of
+  sending, not a standalone sweep — a scheduled cleanup function would
+  close that last gap but wasn't judged worth the added complexity yet.
 - **Household size isn't capped.** `memberUids` is an unbounded array;
   the product is designed around two people, but nothing stops a third
   join if they get hold of the invite code before it's used. Consider

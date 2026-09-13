@@ -1,8 +1,9 @@
-import { getFirestore } from 'firebase-admin/firestore';
+import { FieldValue, getFirestore } from 'firebase-admin/firestore';
 import { getMessaging } from 'firebase-admin/messaging';
 import { logger } from 'firebase-functions/v2';
 
 import { formatMoney } from './formatters';
+import { staleTokensToRemove, TokenSendOutcome } from './notificationCleanup';
 import { AppUser, Budget, SpendTransaction } from './types';
 
 /**
@@ -37,13 +38,17 @@ export async function sendPurchaseNotification(
   const userSnaps = await Promise.all(memberUids.map((uid) => db.doc(`users/${uid}`).get()));
   const recipientUids: string[] = [];
   const tokens: string[] = [];
+  const tokenOwners: string[] = []; // parallel to `tokens`, for mapping FCM's per-token results back to a user doc
   for (const snap of userSnaps) {
     if (!snap.exists) continue;
     const user = snap.data() as AppUser;
     if (user.notificationsEnabled === false) continue;
     if (user.fcmTokens?.length) {
       recipientUids.push(snap.id);
-      tokens.push(...user.fcmTokens);
+      for (const token of user.fcmTokens) {
+        tokens.push(token);
+        tokenOwners.push(snap.id);
+      }
     }
   }
 
@@ -60,11 +65,25 @@ export async function sendPurchaseNotification(
       data: { transactionId, householdId },
     });
     if (response.failureCount > 0) {
-      response.responses.forEach((r, i) => {
-        if (!r.success) {
-          logger.warn(`FCM send failed for token index ${i}`, r.error);
-        }
+      const outcomes: TokenSendOutcome[] = response.responses.map((r, i) => ({
+        ownerUid: tokenOwners[i],
+        token: tokens[i],
+        success: r.success,
+        errorCode: r.error?.code,
+      }));
+      outcomes.forEach((o, i) => {
+        if (!o.success) logger.warn(`FCM send failed for token index ${i}`, response.responses[i].error);
       });
+
+      const stale = staleTokensToRemove(outcomes);
+      await Promise.all(
+        stale.map((s) =>
+          db.doc(`users/${s.ownerUid}`).update({ fcmTokens: FieldValue.arrayRemove(s.token) })
+        )
+      );
+      if (stale.length > 0) {
+        logger.info(`sendPurchaseNotification: pruned ${stale.length} stale FCM token(s)`);
+      }
     }
   } else {
     logger.info(`sendPurchaseNotification: no eligible recipients for household ${householdId}`);

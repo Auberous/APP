@@ -122,9 +122,17 @@ each provider's current signing scheme. This is a hard blocker per
 
 ## 7. Polish pass
 
-- Replace the placeholder "Partner" label in `DashboardScreen` with the
-  partner's real `displayName` (already on `AppUser`, just not looked up
-  there yet).
+- ~~Replace the placeholder "Partner" label in `DashboardScreen`~~ ✅
+  done — `householdMemberNamesProvider` resolves each member's
+  `displayName` (falling back to the part of their email before the @).
+  Fixing this surfaced a real gap: `users/{uid}` was only ever created by
+  the email/password signup screen — Google/Apple sign-in had no
+  "create account" step of their own, so the first Google/Apple sign-in
+  would have hit a Firestore `update`-on-nonexistent-doc error the
+  moment `createHousehold` ran. `currentAppUserProvider` now bootstraps
+  the doc (merge-only, so it never clobbers `householdId`/`fcmTokens`/
+  `notificationsEnabled` on an existing one) regardless of sign-in
+  method.
 - ~~Add the cycle-rollover flow~~ ✅ done, manually — `BudgetSetupScreen`
   now distinguishes "Save changes" (edits amount/payday, keeps tracked
   spend) from "Start new cycle now" (confirmed, calls
@@ -138,7 +146,15 @@ each provider's current signing scheme. This is a hard blocker per
   called out: automatic rollover needs *some* notion of pay frequency
   (weekly/fortnightly/monthly) to pick the next date on its own, which
   the current one-shot "next payday date" input doesn't capture.
-- Prune stale FCM tokens on send failure (see `docs/SECURITY.md`).
+- ~~Prune stale FCM tokens on send failure~~ ✅ done —
+  `notificationCleanup.ts`'s `staleTokensToRemove` (pure function, unit
+  tested independently of Firestore/Messaging) picks out tokens that
+  failed with `messaging/registration-token-not-registered` or
+  `messaging/invalid-registration-token` specifically — not every
+  failure, since a transient error (rate limiting, a momentary backend
+  error) says nothing about whether the token itself is still good.
+  `sendPurchaseNotification` removes those via `arrayRemove` after each
+  send.
 - Add the lock-screen widget (iOS: WidgetKit; Android: App Widgets)
   showing "Today: $X left" — this needs native platform channels or a
   Flutter widget package and isn't started here, but every number it

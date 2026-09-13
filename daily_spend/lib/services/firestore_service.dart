@@ -37,6 +37,36 @@ class FirestoreService {
         );
   }
 
+  /// One-off fetch, for cases like resolving a household member's display
+  /// name where a live subscription per member isn't worth the overhead —
+  /// see `householdMemberNamesProvider`.
+  Future<AppUser?> getUser(String uid) async {
+    final doc = await _userDoc(uid).get();
+    return doc.exists ? AppUser.fromJson(doc.id, doc.data()!) : null;
+  }
+
+  /// Bootstraps `users/{uid}` for a sign-in method that has no explicit
+  /// "create account" step of its own to do it — Google and Apple both
+  /// hand back an already-authenticated user with nothing else called.
+  /// (Email/password signup creates its doc explicitly in
+  /// `SignupScreen`, which runs first there, but calling this afterwards
+  /// too is harmless.) A merge-only write, restricted to fields sourced
+  /// from the auth provider: safe to call on every sign-in without
+  /// clobbering `householdId`, `fcmTokens`, or `notificationsEnabled` on
+  /// an account that already has a doc.
+  Future<void> ensureUserDocExists({
+    required String uid,
+    String? email,
+    String? displayName,
+    String? photoUrl,
+  }) {
+    return _userDoc(uid).set({
+      if (email != null && email.isNotEmpty) 'email': email,
+      if (displayName != null && displayName.isNotEmpty) 'displayName': displayName,
+      if (photoUrl != null && photoUrl.isNotEmpty) 'photoUrl': photoUrl,
+    }, SetOptions(merge: true));
+  }
+
   Future<void> setUserHousehold(String uid, String householdId) {
     return _userDoc(uid).update({'householdId': householdId});
   }
