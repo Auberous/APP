@@ -1,0 +1,86 @@
+rules_version = '2';
+
+// Security model, in one sentence: a signed-in user can read/write their
+// own `users/{uid}` doc, and can read/write anything under a household
+// they belong to, and nothing else. Writes to `budget` and
+// `transactions` from *clients* are for manual/demo entries only — the
+// real bank-driven path writes from Cloud Functions using the Admin SDK,
+// which bypasses these rules entirely (see
+// firebase/functions/src/transactionWebhook.ts and
+// docs/SECURITY.md).
+service cloud.firestore {
+  match /databases/{database}/documents {
+
+    function isSignedIn() {
+      return request.auth != null;
+    }
+
+    function isSelf(uid) {
+      return isSignedIn() && request.auth.uid == uid;
+    }
+
+    function household(householdId) {
+      return get(/databases/$(database)/documents/households/$(householdId)).data;
+    }
+
+    function isHouseholdMember(householdId) {
+      return isSignedIn() && request.auth.uid in household(householdId).memberUids;
+    }
+
+    match /users/{uid} {
+      allow read, update: if isSelf(uid);
+      allow create: if isSelf(uid);
+      // No client-side delete — account deletion is a Cloud Function
+      // (needs to clean up household membership, tokens, etc. atomically).
+      allow delete: if false;
+    }
+
+    match /households/{householdId} {
+      allow read: if isHouseholdMember(householdId);
+      // Creation happens via FirestoreService.createHousehold — the
+      // creator must be listed as the sole member and as createdBy.
+      allow create: if isSignedIn()
+        && request.resource.data.memberUids == [request.auth.uid]
+        && request.resource.data.createdBy == request.auth.uid;
+      // Joining an existing household is deliberately NOT a client write:
+      // the joiner isn't a member yet, so they can't be granted read/write
+      // here without exposing every household to an unauthenticated-into-it
+      // lookup by invite code. It goes through the `joinHousehold` Cloud
+      // Function instead, which uses the Admin SDK and bypasses these
+      // rules entirely — see functions/src/index.ts.
+      allow update: if isHouseholdMember(householdId);
+      allow delete: if false;
+
+      match /budget/{document=**} {
+        allow read: if isHouseholdMember(householdId);
+        // Manual entry only — see FirestoreService.setBudget /
+        // incrementCycleSpent. The Cloud Function path uses the Admin SDK
+        // and is not subject to this rule.
+        allow write: if isHouseholdMember(householdId);
+      }
+
+      match /transactions/{transactionId} {
+        allow read: if isHouseholdMember(householdId);
+        allow create: if isHouseholdMember(householdId)
+          && request.resource.data.spentByUid == request.auth.uid;
+        allow update, delete: if false; // transactions are append-only
+      }
+
+      match /notifications/{notificationId} {
+        // Written only by the notifications Cloud Function (Admin SDK);
+        // clients may read their own household's history.
+        allow read: if isHouseholdMember(householdId);
+        allow write: if false;
+      }
+
+      match /linkedAccounts/{accountId} {
+        // Written only by the Cloud Function that finalizes a bank
+        // consent flow (Admin SDK) — see docs/OPEN_BANKING_INTEGRATION.md.
+        // Clients may read their own household's linked accounts to show
+        // them in Settings.
+        allow read: if isHouseholdMember(householdId);
+        allow write: if false;
+      }
+    }
+  }
+}
