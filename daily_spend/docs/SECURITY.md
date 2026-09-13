@@ -26,18 +26,18 @@
   `sendPurchaseNotification` checks each recipient's own
   `notificationsEnabled` rather than an all-or-nothing household switch,
   so muting your own phone doesn't need your partner's agreement.
+- **Webhook requests are signature-verified.** `basiqWebhook` and
+  `adatreeWebhook` reject any request with a missing or invalid HMAC-SHA256
+  signature (constant-time compared, computed over the exact raw request
+  bytes — see `webhookSignature.ts`, unit tested against 8 cases including
+  tampered-body and wrong-secret) before touching Firestore. **The
+  mechanism is real; the header name is not yet confirmed** —
+  `X-Basiq-Signature`/`X-Adatree-Signature` are placeholders (marked
+  `TODO` at each call site in `index.ts`) until checked against each
+  provider's current webhook docs. Confirm those before relying on this
+  in production; don't assume the placeholder names are correct.
 
 ## Known gaps — read before going anywhere near production
-
-- **Webhook signature verification is not implemented.** `basiqWebhook`
-  and `adatreeWebhook` accept `BASIQ_WEBHOOK_SECRET`/
-  `ADATREE_WEBHOOK_SECRET` as configured secrets but don't yet verify an
-  incoming request's signature against them — the TODO is marked
-  explicitly in `functions/src/index.ts`. **Do not deploy either webhook
-  publicly until this is filled in** — an unverified webhook endpoint
-  that writes financial data on request is an open door for anyone who
-  finds the URL and account ID. Check each provider's current webhook
-  docs for the exact HMAC/header scheme.
 - **No rate limiting on Cloud Functions endpoints** beyond Firebase's
   platform defaults. Consider App Check on callables, and either a
   managed API gateway or a simple in-function counter (keyed by IP or
@@ -59,11 +59,9 @@
   and the next purchase notification, since pruning is a side effect of
   sending, not a standalone sweep — a scheduled cleanup function would
   close that last gap but wasn't judged worth the added complexity yet.
-- **Household size isn't capped.** `memberUids` is an unbounded array;
-  the product is designed around two people, but nothing stops a third
-  join if they get hold of the invite code before it's used. Consider
-  capping `memberUids.length` in the `joinHousehold` function if that
-  matters for the product.
+- ~~**Household size isn't capped.**~~ Fixed — `joinHouseholdCore`
+  rejects a third join attempt once `memberUids.length >= 2`, tested
+  against the emulator.
 - **This has not been through a real security review.** It's an MVP
   scaffold — treat every point above as "must resolve before handling
   real linked bank accounts," not as a checklist that's already done.

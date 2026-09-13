@@ -1,11 +1,11 @@
 import { initializeApp } from 'firebase-admin/app';
-import { getFirestore } from 'firebase-admin/firestore';
 import { onCall, onRequest, HttpsError } from 'firebase-functions/v2/https';
 import { defineSecret } from 'firebase-functions/params';
 import { logger } from 'firebase-functions/v2';
 
+import { joinHouseholdCore } from './joinHousehold';
 import { findLinkedAccount, recordTransactionAndNotify, IncomingPurchase } from './transactionWebhook';
-import { Household } from './types';
+import { verifyHmacSignature } from './webhookSignature';
 
 initializeApp();
 
@@ -19,53 +19,17 @@ initializeApp();
  * joining user isn't a household member yet and so can't be granted
  * direct read/write access to look the household up themselves without
  * exposing every household to an unauthenticated-into-it query — see
- * `firebase/firestore.rules` and `docs/FIRESTORE_SCHEMA.md`.
+ * `firebase/firestore.rules` and `docs/FIRESTORE_SCHEMA.md`. The actual
+ * logic lives in `joinHouseholdCore` (joinHousehold.ts) so it can be
+ * unit-tested against the Firestore emulator without going through the
+ * callable wire protocol.
  */
 export const joinHousehold = onCall<{ inviteCode: string }>(async (request) => {
   const uid = request.auth?.uid;
   if (!uid) throw new HttpsError('unauthenticated', 'Sign in first.');
+  if (!request.data.inviteCode) throw new HttpsError('invalid-argument', 'inviteCode is required.');
 
-  const inviteCode = request.data.inviteCode?.trim().toUpperCase();
-  if (!inviteCode) throw new HttpsError('invalid-argument', 'inviteCode is required.');
-
-  const db = getFirestore();
-  const query = await db
-    .collection('households')
-    .where('pendingInviteCode', '==', inviteCode)
-    .limit(1)
-    .get();
-
-  if (query.empty) {
-    throw new HttpsError('not-found', 'No household is waiting on that invite code.');
-  }
-
-  const doc = query.docs[0];
-
-  const updatedHousehold = await db.runTransaction(async (tx) => {
-    const snap = await tx.get(doc.ref);
-    const household = snap.data() as Household;
-
-    if (!household.pendingInviteCode) {
-      // Someone else joined between our query and this transaction.
-      throw new HttpsError('failed-precondition', 'That invite code has already been used.');
-    }
-    if (household.memberUids.includes(uid)) {
-      throw new HttpsError('failed-precondition', "You're already a member of this household.");
-    }
-
-    const memberUids = [...household.memberUids, uid];
-    tx.update(doc.ref, { memberUids, pendingInviteCode: null });
-    tx.update(db.doc(`users/${uid}`), { householdId: doc.id });
-
-    return { ...household, memberUids, pendingInviteCode: null };
-  });
-
-  return {
-    householdId: doc.id,
-    name: updatedHousehold.name,
-    memberUids: updatedHousehold.memberUids,
-    createdBy: updatedHousehold.createdBy,
-  };
+  return joinHouseholdCore(uid, request.data.inviteCode);
 });
 
 // ---------------------------------------------------------------------
@@ -81,12 +45,20 @@ const ADATREE_WEBHOOK_SECRET = defineSecret('ADATREE_WEBHOOK_SECRET');
  * webhook documentation before going live, and configure the matching
  * webhook secret in the Basiq dashboard.
  *
- * TODO(basiq): verify the request signature using BASIQ_WEBHOOK_SECRET
- * before trusting the payload — Basiq signs webhook deliveries; check
- * their docs for the exact header/HMAC scheme and reject unsigned or
- * mismatched requests with 401 rather than processing them.
+ * TODO(basiq): `X-Basiq-Signature` below is a placeholder header name —
+ * confirm the actual header Basiq sends (and its digest encoding) in
+ * their current webhook docs; `verifyHmacSignature` implements the
+ * verification mechanics generically, but the header name is the one
+ * piece specific to Basiq that still needs confirming against a real
+ * account before this can be trusted in production.
  */
 export const basiqWebhook = onRequest({ secrets: [BASIQ_WEBHOOK_SECRET] }, async (req, res) => {
+  if (!verifyHmacSignature(req.rawBody, req.get('X-Basiq-Signature'), BASIQ_WEBHOOK_SECRET.value())) {
+    logger.warn('basiqWebhook: rejected request with missing or invalid signature');
+    res.status(401).send('invalid signature');
+    return;
+  }
+
   try {
     const body = req.body as {
       accountId: string;
@@ -130,10 +102,16 @@ export const basiqWebhook = onRequest({ secrets: [BASIQ_WEBHOOK_SECRET] }, async
 
 /**
  * Adatree's webhook delivery for a new transaction. Same caveats as
- * `basiqWebhook` — verify payload shape and signature scheme against
- * Adatree's current docs before going live.
+ * `basiqWebhook` — `X-Adatree-Signature` is a placeholder header name;
+ * confirm it against Adatree's current webhook docs before going live.
  */
 export const adatreeWebhook = onRequest({ secrets: [ADATREE_WEBHOOK_SECRET] }, async (req, res) => {
+  if (!verifyHmacSignature(req.rawBody, req.get('X-Adatree-Signature'), ADATREE_WEBHOOK_SECRET.value())) {
+    logger.warn('adatreeWebhook: rejected request with missing or invalid signature');
+    res.status(401).send('invalid signature');
+    return;
+  }
+
   try {
     const body = req.body as {
       accountId: string;

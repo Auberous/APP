@@ -90,11 +90,15 @@ daily_spend/
     functions/
       src/
         index.ts                 # exported Cloud Functions
+        joinHousehold.ts         # household-join logic (capped at 2 members)
         transactionWebhook.ts    # the atomic record-and-notify core
+        webhookSignature.ts      # generic HMAC verification for both webhooks
         notifications.ts         # FCM composition + send
+        notificationCleanup.ts   # decides which stale FCM tokens to prune
         budgetCalculator.ts      # TS twin of the Dart calculator
         formatters.ts
         types.ts                 # shared shapes, mirrors lib/models/
+        testSupport/             # shared emulator-test setup, excluded from the deployed build
   docs/
     ARCHITECTURE.md               (this file)
     FIRESTORE_SCHEMA.md

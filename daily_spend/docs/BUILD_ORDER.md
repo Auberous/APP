@@ -15,13 +15,17 @@ remaining to-do.
   Basiq/Adatree stubs (`lib/services/bank/`).
 - Firestore rules + indexes + schema doc (`firebase/firestore.*`,
   `docs/FIRESTORE_SCHEMA.md`).
-- Cloud Functions: household join, bank webhooks, atomic budget
-  recalculation, FCM push (`firebase/functions/src/`) — type-checks
-  clean and unit-tested (`npx tsc --noEmit`, `npm test`), not deployed.
+- Cloud Functions: household join (capped at two members), signature-
+  verified bank webhooks, atomic budget recalculation, FCM push with
+  stale-token pruning (`firebase/functions/src/`) — type-checks clean
+  and unit-tested (`npx tsc --noEmit`, `npm test`: 20/20), not deployed.
 - `test/utils/budget_calculator_test.dart` and
   `firebase/functions/src/budgetCalculator.test.ts` — the same fixtures
   checked against both implementations of the budget formula, all
-  passing (12/12 Dart, 7/7 TypeScript).
+  passing (12/12 Dart, 7/7 TypeScript, both counted in the totals above).
+- Firestore-emulator-backed integration tests (`npm run test:integration`:
+  9/9) covering the webhook idempotency guard and the household-join
+  logic (unknown/reused code, duplicate member, the two-member cap).
 
 ## 1. Make it compile ✅ done
 
@@ -95,12 +99,18 @@ purchase actually flow through, call
 button or test — the mock provider is entirely client-side today, so it
 doesn't exercise the Cloud Functions webhook path (see step 6 for that).
 
-## 5. Fill in the webhook signature verification
+## 5. Confirm the webhook signature header names
 
-Before either webhook is reachable from the real internet: implement the
-TODOs in `functions/src/index.ts` (`basiqWebhook`/`adatreeWebhook`) per
-each provider's current signing scheme. This is a hard blocker per
-`docs/SECURITY.md` — do this before step 6, not after.
+The verification mechanism itself is implemented and unit tested
+(`webhookSignature.ts`'s `verifyHmacSignature`, wired into both webhooks
+in `index.ts`) — both webhooks already reject a request with a missing
+or invalid signature. What's *not* confirmed: `X-Basiq-Signature` and
+`X-Adatree-Signature` are placeholder header names (marked `TODO` at each
+call site). Before either webhook is reachable from the real internet,
+check each provider's current webhook docs for the actual header name
+and digest encoding they use, and update the two `req.get(...)` calls in
+`index.ts` accordingly. This is a hard blocker per `docs/SECURITY.md` —
+do this before step 6, not after.
 
 ## 6. Wire up real Basiq or Adatree credentials
 
@@ -168,4 +178,8 @@ each provider's current signing scheme. This is a hard blocker per
   manual emulator start/stop needed). Covers first delivery, a redelivered
   duplicate (asserts the budget moves once, not twice, and the partner
   notification fires once, not twice), two distinct purchases both
-  applying, and the no-budget-yet fallback path.
+  applying, and the no-budget-yet fallback path. A second file,
+  `joinHousehold.integration.test.ts`, covers the household-join logic
+  the same way — writing it caught a real bug (`tx.update()` on a
+  `users/{uid}` doc that might not exist yet, fixed to `set()` with
+  merge) that a mocked Firestore would not have caught.

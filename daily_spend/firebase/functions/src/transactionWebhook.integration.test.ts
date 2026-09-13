@@ -1,9 +1,9 @@
 import { strict as assert } from 'assert';
 
-import { initializeApp } from 'firebase-admin/app';
 import { getFirestore } from 'firebase-admin/firestore';
 import * as sinon from 'sinon';
 
+import { ensureTestAppInitialized } from './testSupport/emulatorApp';
 import { Budget } from './types';
 import { IncomingPurchase, recordTransactionAndNotify } from './transactionWebhook';
 
@@ -23,9 +23,7 @@ describe('recordTransactionAndNotify (Firestore emulator)', function () {
   this.timeout(10000);
 
   before(() => {
-    // "demo-*" project IDs are treated specially by the Firebase Local
-    // Emulator Suite: no real GCP project or credentials required.
-    initializeApp({ projectId: 'demo-daily-spend' });
+    ensureTestAppInitialized();
   });
 
   const db = () => getFirestore();

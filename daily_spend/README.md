@@ -42,18 +42,27 @@ this environment:
   passes 12/12 unit tests on `BudgetCalculator`
   (`test/utils/budget_calculator_test.dart`).
 - **Cloud Functions (TypeScript)**: `npm install && npx tsc --noEmit`
-  type-checks clean; `npm test` passes 7/7 unit tests on the TypeScript
-  twin of the same budget math (`src/budgetCalculator.test.ts`), using
-  the identical fixtures as the Dart tests so both sides are checked
-  against the same numbers.
-- **The webhook idempotency guard**, specifically — the thing most worth
-  distrusting in this codebase, since a bug there means double-charging
-  a household's tracked spend: `npm run test:integration` runs
-  `src/transactionWebhook.integration.test.ts` against a real Firestore
-  emulator (via `firebase emulators:exec`, no manual setup) and confirms
-  a redelivered webhook moves the budget once, not twice, and notifies
-  once, not twice — plus first-delivery, two-distinct-purchases, and
-  no-budget-yet cases. 4/4 passing.
+  type-checks clean; `npm test` passes **20/20** unit tests — the
+  TypeScript twin of the budget math (`budgetCalculator.test.ts`, same
+  fixtures as the Dart tests), the webhook HMAC signature verification
+  (`webhookSignature.test.ts`, 8 cases: correct signature, tampered body,
+  wrong secret, empty-secret-never-matches, etc.), and stale-FCM-token
+  pruning logic (`notificationCleanup.test.ts`, 5 cases).
+- **The stuff most worth distrusting in this codebase, specifically** —
+  bugs here mean double-charging a household's spend or letting a third
+  person into someone's household: `npm run test:integration` runs two
+  suites against a real Firestore emulator (via `firebase emulators:exec`,
+  no manual setup), **9/9 passing**. `transactionWebhook.integration.test.ts`
+  confirms a redelivered webhook moves the budget once, not twice, and
+  notifies once, not twice. `joinHousehold.integration.test.ts` confirms
+  an unknown/reused invite code is rejected, a duplicate member is
+  rejected, and a third join is rejected once a household has two members
+  — and caught a real bug while being written: joining used `.update()`
+  on a `users/{uid}` doc that isn't guaranteed to exist yet (the doc is
+  bootstrapped client-side as a fire-and-forget write on sign-in), which
+  would have thrown `NOT_FOUND` in that race. Fixed to `.set()` with
+  merge. A mocked Firestore would not have caught this — it was the
+  emulator's real transaction semantics that did.
 
 What's *not* verified: the app hasn't been run on a device/emulator or
 against a real Firebase project (no `google-services.json`/
