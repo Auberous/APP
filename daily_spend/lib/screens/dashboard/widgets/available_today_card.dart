@@ -29,7 +29,7 @@ class AvailableTodayCard extends StatelessWidget {
     };
 
     return Card(
-      color: color.withOpacity(0.08),
+      color: color.withValues(alpha: 0.08),
       child: Padding(
         padding: const EdgeInsets.symmetric(vertical: 32, horizontal: 16),
         child: Column(
@@ -43,7 +43,7 @@ class AvailableTodayCard extends StatelessWidget {
             const SizedBox(height: 8),
             Chip(
               label: Text(label, style: TextStyle(color: color)),
-              backgroundColor: color.withOpacity(0.12),
+              backgroundColor: color.withValues(alpha: 0.12),
               side: BorderSide.none,
             ),
             const SizedBox(height: 20),

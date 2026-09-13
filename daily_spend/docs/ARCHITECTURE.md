@@ -135,9 +135,10 @@ double-counted spend or a duplicate notification.
 `riverpod_generator`/`freezed` are listed as dev dependencies for later,
 but every provider in this MVP is hand-written (`Provider`,
 `StreamProvider`) rather than `@riverpod`-annotated, and every model has
-hand-written `toJson`/`fromJson` rather than `@freezed`. That's because
-this environment has no Dart/Flutter SDK to run `build_runner` and
-generate the `.g.dart`/`.freezed.dart` files codegen needs — see the
-top-level README's "A note on what hasn't been verified" for the full
-picture. Switching to codegen later is a mechanical refactor, not an
-architecture change.
+hand-written `toJson`/`fromJson` rather than `@freezed`. That was a
+deliberate choice to keep the project's very first compile independent of
+a `build_runner` codegen step — one less moving part while nothing else
+about the app is validated yet (see the top-level README's "What's been
+verified"). Switching to codegen later is a mechanical refactor, not an
+architecture change; running `dart run build_runner build` after adding
+`@riverpod`/`@freezed` annotations is all it takes.

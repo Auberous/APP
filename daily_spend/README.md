@@ -31,34 +31,35 @@ Firestore, Cloud Functions, Cloud Messaging) on the backend; **Basiq** and
 **Adatree** as pluggable Australian Open Banking (Consumer Data Right)
 aggregators behind a common `BankProvider` interface.
 
-## A note on what hasn't been verified
+## What's been verified
 
-This was built in an environment with **no Flutter/Dart SDK installed**,
-so the Dart code has been hand-written carefully but never run through
-`flutter analyze`, `flutter pub get`, or a real compile. Before relying on
-it:
+Both sides of the stack now compile and pass tests, checked directly in
+this environment:
 
-```bash
-cd daily_spend
-flutter create . --platforms=android,ios   # adds android/, ios/, etc. around the existing lib/
-flutter pub get
-flutter analyze
-```
+- **Flutter/Dart**: `flutter create . --platforms=android,ios` (adds
+  `android/`, `ios/`, etc. around the existing `lib/`), `flutter pub get`,
+  and `flutter analyze` all run clean — **no issues found**. `flutter test`
+  passes 12/12 unit tests on `BudgetCalculator`
+  (`test/utils/budget_calculator_test.dart`).
+- **Cloud Functions (TypeScript)**: `npm install && npx tsc --noEmit`
+  type-checks clean; `npm test` passes 7/7 unit tests on the TypeScript
+  twin of the same budget math (`src/budgetCalculator.test.ts`), using
+  the identical fixtures as the Dart tests so both sides are checked
+  against the same numbers.
 
-The **Cloud Functions TypeScript has been verified** — `npm install &&
-npx tsc --noEmit` in `firebase/functions/` passes clean in this
-environment, since Node was available here.
-
-Real bank integration (Basiq/Adatree) needs live API credentials that
-weren't available here either: the `BankProvider` abstraction and a fully
-working `MockBankProvider` are real and usable today; the Basiq/Adatree
-Cloud Functions are real-shaped but throw `unimplemented` until API keys
-are configured — see `docs/OPEN_BANKING_INTEGRATION.md` for exactly what's
-left and `docs/BUILD_ORDER.md` for the order to tackle it in.
+What's *not* verified: the app hasn't been run on a device/emulator or
+against a real Firebase project (no `google-services.json`/
+`GoogleService-Info.plist`, no `flutterfire configure` output — see
+`docs/BUILD_ORDER.md` steps 2-4), and real bank integration (Basiq/Adatree)
+needs live API credentials that weren't available here. The `BankProvider`
+abstraction and a fully working `MockBankProvider` are real and usable
+today; the Basiq/Adatree Cloud Functions are real-shaped but throw
+`unimplemented` until API keys are configured — see
+`docs/OPEN_BANKING_INTEGRATION.md` for exactly what's left.
 
 ## Quickest path to seeing it run
 
-See `docs/BUILD_ORDER.md` steps 1-4 — compile, attach a Firebase project,
-deploy the backend, run against the built-in mock bank provider (no bank
+See `docs/BUILD_ORDER.md` steps 2-4 — attach a Firebase project, deploy
+the backend, run against the built-in mock bank provider (no bank
 credentials needed to see the whole flow work end-to-end with fake
 purchases).

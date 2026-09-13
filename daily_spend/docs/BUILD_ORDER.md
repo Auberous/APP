@@ -1,35 +1,51 @@
 # Step-by-step build order
 
-Everything below "Where this scaffold stops" is written, but **not
-compiled or run** in this environment (no Flutter/Dart SDK — see the
-top-level README). Steps 1-3 make it actually runnable; the rest is the
-order a fresh team would tackle the real feature work in.
+Steps 2-3 (attach a real Firebase project, deploy the backend) still need
+to be done by you — they need credentials/logins this environment
+doesn't have. Step 1 (make it compile) has already been done and
+verified here; it's kept below as a record of what was run, not as a
+remaining to-do.
 
 ## 0. What's already here
 
 - Flutter app skeleton: models, services, Riverpod providers, screens,
-  routing (`daily_spend/lib/`).
+  routing (`daily_spend/lib/`), plus generated Android/iOS platform
+  scaffolding (`android/`, `ios/`).
 - `BankProvider` abstraction with a working mock and real-shaped
   Basiq/Adatree stubs (`lib/services/bank/`).
 - Firestore rules + indexes + schema doc (`firebase/firestore.*`,
   `docs/FIRESTORE_SCHEMA.md`).
 - Cloud Functions: household join, bank webhooks, atomic budget
   recalculation, FCM push (`firebase/functions/src/`) — type-checks
-  clean (`npx tsc --noEmit`), not deployed.
+  clean and unit-tested (`npx tsc --noEmit`, `npm test`), not deployed.
+- `test/utils/budget_calculator_test.dart` and
+  `firebase/functions/src/budgetCalculator.test.ts` — the same fixtures
+  checked against both implementations of the budget formula, all
+  passing (12/12 Dart, 7/7 TypeScript).
 
-## 1. Make it compile
+## 1. Make it compile ✅ done
 
 ```bash
 cd daily_spend
 flutter create . --platforms=android,ios   # fills in android/, ios/, etc. around the existing lib/
 flutter pub get
-flutter analyze                             # fix whatever the real SDK's analyzer flags
+flutter analyze
+flutter test
 ```
 
-`flutter create .` on an existing project only adds the missing
-platform scaffolding (android/, ios/, web/ directories, launcher icons,
-etc.) — it doesn't touch `lib/`. This step hasn't been run here because
-no Flutter SDK is installed in this environment.
+Ran clean end to end: `flutter analyze` → **No issues found!**;
+`flutter test` → **12/12 passing**. `flutter create .` on an existing
+project only adds the missing platform scaffolding (android/, ios/, etc.)
+— it left `lib/`, `pubspec.yaml`, and `analysis_options.yaml` untouched
+apart from appending `build/`, `android/`, `ios/` to the analyzer's
+exclude list, which is expected and harmless.
+
+Two real issues turned up and were fixed: a deprecated `Color.withOpacity`
+call (switched to `.withValues(alpha:)`, and bumped the Dart SDK floor in
+`pubspec.yaml` to `>=3.6.0` to match), and a `catchError` callback in
+`auth_service.dart` that didn't return a value on its error path. Nothing
+else needed changing — the hand-written Dart compiled correctly on the
+first real run against it.
 
 ## 2. Attach a real Firebase project
 
