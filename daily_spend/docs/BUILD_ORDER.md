@@ -125,10 +125,19 @@ each provider's current signing scheme. This is a hard blocker per
 - Replace the placeholder "Partner" label in `DashboardScreen` with the
   partner's real `displayName` (already on `AppUser`, just not looked up
   there yet).
-- Add the cycle-rollover flow: `BudgetCalculator.rollCycle` exists but
-  nothing calls it yet — decide whether rollover is automatic (a
-  scheduled Cloud Function that fires on `nextPaydayDate`) or manual (a
-  "start new cycle" button in Settings), and wire it.
+- ~~Add the cycle-rollover flow~~ ✅ done, manually — `BudgetSetupScreen`
+  now distinguishes "Save changes" (edits amount/payday, keeps tracked
+  spend) from "Start new cycle now" (confirmed, calls
+  `BudgetCalculator.rollCycle`, resets `cycleSpentCents`). This also
+  fixed a real bug: the screen previously created a brand-new `Budget`
+  unconditionally, so editing the amount mid-cycle silently wiped
+  tracked spend to $0 — worth knowing if you're reviewing the diff.
+  *Not* done: **automatic** rollover (a scheduled Cloud Function that
+  fires on `nextPaydayDate` without a partner having to tap anything) —
+  still open, and still needs the product decision the original bullet
+  called out: automatic rollover needs *some* notion of pay frequency
+  (weekly/fortnightly/monthly) to pick the next date on its own, which
+  the current one-shot "next payday date" input doesn't capture.
 - Prune stale FCM tokens on send failure (see `docs/SECURITY.md`).
 - Add the lock-screen widget (iOS: WidgetKit; Android: App Widgets)
   showing "Today: $X left" — this needs native platform channels or a
