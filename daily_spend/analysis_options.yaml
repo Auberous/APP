@@ -18,3 +18,4 @@ analyzer:
     # template .dart file under its own node_modules that the analyzer
     # would otherwise try to resolve against this project's dependencies.
     - firebase/**
+    - web/**

@@ -74,7 +74,41 @@ today; the Basiq/Adatree Cloud Functions are real-shaped but throw
 `unimplemented` until API keys are configured — see
 `docs/OPEN_BANKING_INTEGRATION.md` for exactly what's left.
 
-## Quickest path to seeing it run
+## Looking at the screens without a Firebase project
+
+`lib/preview/preview_main.dart` is a separate entry point — not shipped,
+not part of the production app — that renders the real screens
+(`DashboardScreen`, `SettingsScreen`, etc.; nothing is re-implemented)
+fed static sample data via Riverpod overrides, with a one-screen menu to
+jump between them. No Firebase project, no login, no bank credentials
+needed:
+
+```bash
+cd daily_spend
+flutter run -d chrome --target=lib/preview/preview_main.dart
+```
+
+or, to view it as a static build:
+
+```bash
+flutter build web --target=lib/preview/preview_main.dart
+# then serve build/web/ with any static file server
+```
+
+**Why this repo can't just hand you screenshots**: Flutter's web target
+dynamically loads the Firebase JS SDK from `www.gstatic.com` at runtime
+(this happens regardless of the preview harness above, and regardless of
+whether you're pointed at a real project or an emulator — it's how
+FlutterFire's web plugins work) — the sandbox this was built in blocks
+that domain at the network policy level (confirmed: a `403` on the
+`CONNECT`, not a flaky timeout), so the app can compile and build cleanly
+here but can't actually boot in a browser *in this environment*. It boots
+fine anywhere with normal internet access, e.g. your own machine. The
+Android/iOS builds don't have this problem — their Firebase SDKs are
+bundled natively rather than fetched at runtime — but this environment
+also has no Android/iOS emulator to run them on to prove it.
+
+## Quickest path to seeing it run for real
 
 See `docs/BUILD_ORDER.md` steps 2-4 — attach a Firebase project, deploy
 the backend, run against the built-in mock bank provider (no bank
