@@ -1,0 +1,4 @@
+# Emulator Suite run artifacts (firebase emulators:exec / :start)
+.firebase/
+*-debug.log
+firestore-export/

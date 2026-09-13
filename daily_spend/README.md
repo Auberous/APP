@@ -46,6 +46,14 @@ this environment:
   twin of the same budget math (`src/budgetCalculator.test.ts`), using
   the identical fixtures as the Dart tests so both sides are checked
   against the same numbers.
+- **The webhook idempotency guard**, specifically — the thing most worth
+  distrusting in this codebase, since a bug there means double-charging
+  a household's tracked spend: `npm run test:integration` runs
+  `src/transactionWebhook.integration.test.ts` against a real Firestore
+  emulator (via `firebase emulators:exec`, no manual setup) and confirms
+  a redelivered webhook moves the budget once, not twice, and notifies
+  once, not twice — plus first-delivery, two-distinct-purchases, and
+  no-budget-yet cases. 4/4 passing.
 
 What's *not* verified: the app hasn't been run on a device/emulator or
 against a real Firebase project (no `google-services.json`/

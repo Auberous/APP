@@ -13,3 +13,8 @@ analyzer:
     - build/**
     - android/**
     - ios/**
+    # Not part of the Flutter project — the Cloud Functions side is
+    # TypeScript, but firebase-tools (an npm devDependency there) ships a
+    # template .dart file under its own node_modules that the analyzer
+    # would otherwise try to resolve against this project's dependencies.
+    - firebase/**

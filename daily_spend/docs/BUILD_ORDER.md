@@ -134,10 +134,13 @@ each provider's current signing scheme. This is a hard blocker per
   showing "Today: $X left" — this needs native platform channels or a
   Flutter widget package and isn't started here, but every number it
   needs is already computed by `BudgetCalculator`.
-- Write unit tests for `BudgetCalculator` (Dart) and
-  `budgetCalculator.ts` (TypeScript) against the same fixtures, so the
-  two stay in sync as the formula evolves (see `docs/ARCHITECTURE.md`'s
-  note on why they're not shared code).
-- Write a Firestore-emulator-backed test for
-  `recordTransactionAndNotify`'s idempotency guard (send the same
-  webhook payload twice, assert the budget only moves once).
+- ~~Write unit tests for `BudgetCalculator`~~ ✅ done —
+  `test/utils/budget_calculator_test.dart` and
+  `src/budgetCalculator.test.ts`, same fixtures on both sides.
+- ~~Write a Firestore-emulator-backed test for `recordTransactionAndNotify`'s
+  idempotency guard~~ ✅ done — `src/transactionWebhook.integration.test.ts`,
+  run via `npm run test:integration` (wraps `firebase emulators:exec`, no
+  manual emulator start/stop needed). Covers first delivery, a redelivered
+  duplicate (asserts the budget moves once, not twice, and the partner
+  notification fires once, not twice), two distinct purchases both
+  applying, and the no-budget-yet fallback path.

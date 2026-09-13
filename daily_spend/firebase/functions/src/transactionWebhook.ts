@@ -48,11 +48,18 @@ export async function findLinkedAccount(
  * document ID is deterministic (`${provider}_${externalId}`), and a
  * create-only Firestore transaction means a redelivered webhook for the
  * same purchase is a silent no-op rather than double-counted spend.
+ *
+ * `notify` defaults to the real `sendPurchaseNotification` (which calls
+ * live FCM) and is only ever overridden in tests — see
+ * `transactionWebhook.test.ts`, which runs the Firestore transaction
+ * logic above against the emulator but stubs this out rather than
+ * sending real push notifications from a test run.
  */
 export async function recordTransactionAndNotify(
   householdId: string,
   spentByUid: string,
-  purchase: IncomingPurchase
+  purchase: IncomingPurchase,
+  notify: typeof sendPurchaseNotification = sendPurchaseNotification
 ): Promise<{ recorded: boolean }> {
   const db = getFirestore();
   const docId = `${purchase.provider}_${purchase.externalId}`;
@@ -102,7 +109,7 @@ export async function recordTransactionAndNotify(
       externalId: purchase.externalId,
       rawCategory: purchase.rawCategory ?? null,
     };
-    await sendPurchaseNotification(
+    await notify(
       householdId,
       docId,
       transactionForNotification,
