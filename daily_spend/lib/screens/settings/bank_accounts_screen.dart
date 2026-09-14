@@ -12,6 +12,12 @@ import '../../services/bank/bank_provider.dart';
 /// `docs/OPEN_BANKING_INTEGRATION.md` for that flow, which isn't wired up
 /// here yet (both throw `UnimplementedError` until real API credentials
 /// are configured).
+///
+/// Also offers "Simulate a purchase" for the mock provider — this is the
+/// one button in the whole app that actually exercises the real
+/// end-to-end pipeline (Cloud Function → Firestore → push notification)
+/// without needing a real bank connected, so a fresh deploy is demoable
+/// immediately. See `MockPurchaseSimulator`.
 class BankAccountsScreen extends ConsumerStatefulWidget {
   const BankAccountsScreen({super.key});
 
@@ -22,7 +28,9 @@ class BankAccountsScreen extends ConsumerStatefulWidget {
 class _BankAccountsScreenState extends ConsumerState<BankAccountsScreen> {
   LinkedAccount? _linkedAccount;
   bool _isLinking = false;
+  bool _isSimulating = false;
   String? _errorMessage;
+  String? _statusMessage;
 
   Future<void> _connect() async {
     final uid = ref.read(authStateProvider).valueOrNull?.uid;
@@ -39,6 +47,24 @@ class _BankAccountsScreenState extends ConsumerState<BankAccountsScreen> {
       setState(() => _errorMessage = e.toString());
     } finally {
       if (mounted) setState(() => _isLinking = false);
+    }
+  }
+
+  Future<void> _simulatePurchase() async {
+    setState(() {
+      _isSimulating = true;
+      _errorMessage = null;
+      _statusMessage = null;
+    });
+    try {
+      await ref.read(mockPurchaseSimulatorProvider).simulate();
+      if (mounted) {
+        setState(() => _statusMessage = 'Simulated a purchase — check the Dashboard and your notifications.');
+      }
+    } catch (e) {
+      setState(() => _errorMessage = e.toString());
+    } finally {
+      if (mounted) setState(() => _isSimulating = false);
     }
   }
 
@@ -72,6 +98,29 @@ class _BankAccountsScreenState extends ConsumerState<BankAccountsScreen> {
                     : const Icon(Icons.add_link),
                 label: const Text('Connect a bank account'),
               ),
+            if (provider.id == 'mock') ...[
+              const SizedBox(height: 24),
+              const Divider(),
+              const SizedBox(height: 8),
+              Text(
+                'No real bank required yet — send a fake purchase through the '
+                'real pipeline (Cloud Function → Firestore → push notification) '
+                'to see the app actually work.',
+                style: Theme.of(context).textTheme.bodySmall,
+              ),
+              const SizedBox(height: 12),
+              OutlinedButton.icon(
+                onPressed: _isSimulating ? null : _simulatePurchase,
+                icon: _isSimulating
+                    ? const SizedBox(height: 16, width: 16, child: CircularProgressIndicator(strokeWidth: 2))
+                    : const Icon(Icons.bolt),
+                label: const Text('Simulate a purchase'),
+              ),
+            ],
+            if (_statusMessage != null) ...[
+              const SizedBox(height: 16),
+              Text(_statusMessage!, style: TextStyle(color: Theme.of(context).colorScheme.primary)),
+            ],
             if (_errorMessage != null) ...[
               const SizedBox(height: 16),
               Text(_errorMessage!, style: TextStyle(color: Theme.of(context).colorScheme.error)),

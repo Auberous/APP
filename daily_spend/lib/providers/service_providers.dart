@@ -3,6 +3,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../services/auth_service.dart';
 import '../services/bank/bank_provider.dart';
 import '../services/bank/bank_provider_factory.dart';
+import '../services/bank/mock_purchase_simulator.dart';
 import '../services/firestore_service.dart';
 import '../services/notification_service.dart';
 
@@ -26,3 +27,5 @@ final bankProviderKindProvider = Provider<BankProviderKind>((ref) => BankProvide
 final bankProvider = Provider<BankProvider>(
   (ref) => BankProviderFactory.create(ref.watch(bankProviderKindProvider)),
 );
+
+final mockPurchaseSimulatorProvider = Provider<MockPurchaseSimulator>((ref) => MockPurchaseSimulator());

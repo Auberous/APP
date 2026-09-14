@@ -17,15 +17,21 @@ remaining to-do.
   `docs/FIRESTORE_SCHEMA.md`).
 - Cloud Functions: household join (capped at two members), signature-
   verified bank webhooks, atomic budget recalculation, FCM push with
-  stale-token pruning (`firebase/functions/src/`) — type-checks clean
-  and unit-tested (`npx tsc --noEmit`, `npm test`: 20/20), not deployed.
+  stale-token pruning, and a `simulateMockPurchase` demo callable that
+  runs the exact same real pipeline without a bank account
+  (`firebase/functions/src/`) — type-checks clean and unit-tested
+  (`npx tsc --noEmit`, `npm test`: 20/20), not deployed.
 - `test/utils/budget_calculator_test.dart` and
   `firebase/functions/src/budgetCalculator.test.ts` — the same fixtures
   checked against both implementations of the budget formula, all
   passing (12/12 Dart, 7/7 TypeScript, both counted in the totals above).
 - Firestore-emulator-backed integration tests (`npm run test:integration`:
-  9/9) covering the webhook idempotency guard and the household-join
-  logic (unknown/reused code, duplicate member, the two-member cap).
+  13/13) covering the webhook idempotency guard, the household-join
+  logic (unknown/reused code, duplicate member, the two-member cap), and
+  `simulateMockPurchase`.
+- `docs/GO_LIVE_CHECKLIST.md` — the tight, ordered version of steps 2-9
+  below, written for actually getting a live link rather than explaining
+  the reasoning behind each step.
 
 ## 1. Make it compile ✅ done
 
@@ -93,11 +99,15 @@ flutter run
 
 Sign up, create a household, invite a second (real or test) account,
 set a budget. In Settings → Linked bank accounts, "Connect a bank
-account" completes instantly against the mock provider. To see a
-purchase actually flow through, call
-`MockBankProvider.seedTransaction`/`refreshTransactions` from a debug
-button or test — the mock provider is entirely client-side today, so it
-doesn't exercise the Cloud Functions webhook path (see step 6 for that).
+account" completes instantly against the mock provider — but that alone
+doesn't exercise the real backend, since `MockBankProvider` is
+entirely client-side. **Tap "Simulate a purchase"** on the same screen
+instead: it calls the `simulateMockPurchase` Cloud Function, which runs
+through the exact same `recordTransactionAndNotify` path a real
+Basiq/Adatree webhook would (atomic budget update, then a push
+notification) — the fastest way to see the whole backend actually work
+without a real bank connected. See `docs/GO_LIVE_CHECKLIST.md` for the
+end-to-end version of this same walkthrough against a deployed project.
 
 ## 5. Confirm the webhook signature header names
 

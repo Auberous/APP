@@ -25,6 +25,7 @@ red/over budget), no pie charts, no spending categories.
 | `docs/OPEN_BANKING_INTEGRATION.md` | The Basiq/Adatree consent-flow plan, and exactly what's real vs. stubbed today. |
 | `docs/SECURITY.md` | What's implemented, and — importantly — what isn't yet (read before deploying the webhooks publicly). |
 | `docs/BUILD_ORDER.md` | Step-by-step: from this scaffold to a running app to a real bank integration. |
+| `docs/GO_LIVE_CHECKLIST.md` | The tight version: ordered commands to get a real, live `https://…web.app` link, on your own machine. |
 
 Tech stack: **Flutter + Riverpod** on the client; **Firebase** (Auth,
 Firestore, Cloud Functions, Cloud Messaging) on the backend; **Basiq** and
@@ -50,9 +51,9 @@ this environment:
   pruning logic (`notificationCleanup.test.ts`, 5 cases).
 - **The stuff most worth distrusting in this codebase, specifically** —
   bugs here mean double-charging a household's spend or letting a third
-  person into someone's household: `npm run test:integration` runs two
+  person into someone's household: `npm run test:integration` runs three
   suites against a real Firestore emulator (via `firebase emulators:exec`,
-  no manual setup), **9/9 passing**. `transactionWebhook.integration.test.ts`
+  no manual setup), **13/13 passing**. `transactionWebhook.integration.test.ts`
   confirms a redelivered webhook moves the budget once, not twice, and
   notifies once, not twice. `joinHousehold.integration.test.ts` confirms
   an unknown/reused invite code is rejected, a duplicate member is
@@ -63,6 +64,9 @@ this environment:
   would have thrown `NOT_FOUND` in that race. Fixed to `.set()` with
   merge. A mocked Firestore would not have caught this — it was the
   emulator's real transaction semantics that did.
+  `simulateMockPurchase.integration.test.ts` confirms the demo "simulate
+  a purchase" path (see below) applies correctly and rejects a caller
+  with no household yet.
 
 What's *not* verified: the app hasn't been run on a device/emulator or
 against a real Firebase project (no `google-services.json`/
@@ -108,9 +112,13 @@ Android/iOS builds don't have this problem — their Firebase SDKs are
 bundled natively rather than fetched at runtime — but this environment
 also has no Android/iOS emulator to run them on to prove it.
 
-## Quickest path to seeing it run for real
+## Getting a real, usable link
 
-See `docs/BUILD_ORDER.md` steps 2-4 — attach a Firebase project, deploy
-the backend, run against the built-in mock bank provider (no bank
-credentials needed to see the whole flow work end-to-end with fake
-purchases).
+See **`docs/GO_LIVE_CHECKLIST.md`** — an ordered, copy-pasteable set of
+commands (run on your own machine, not in an agent sandbox — see above)
+that gets you from this code to a real `https://<project>.web.app` URL
+you can open on any phone: create a Firebase project, connect it,
+deploy, and try the whole flow using **Settings → Linked bank accounts →
+Simulate a purchase**, which sends a fake purchase through the real
+Cloud Function → Firestore → push-notification pipeline without needing
+an actual bank connected.

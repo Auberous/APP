@@ -73,6 +73,7 @@ daily_spend/
         basiq_bank_provider.dart # calls Cloud Functions, real API TODO
         adatree_bank_provider.dart
         bank_provider_factory.dart
+        mock_purchase_simulator.dart # calls the simulateMockPurchase Cloud Function
     providers/                   # Riverpod: service singletons + Firestore streams
     screens/
       auth/                      # login, signup
@@ -91,6 +92,7 @@ daily_spend/
       src/
         index.ts                 # exported Cloud Functions
         joinHousehold.ts         # household-join logic (capped at 2 members)
+        simulateMockPurchase.ts  # demo callable: runs the real pipeline, no bank needed
         transactionWebhook.ts    # the atomic record-and-notify core
         webhookSignature.ts      # generic HMAC verification for both webhooks
         notifications.ts         # FCM composition + send

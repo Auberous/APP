@@ -4,6 +4,7 @@ import { defineSecret } from 'firebase-functions/params';
 import { logger } from 'firebase-functions/v2';
 
 import { joinHouseholdCore } from './joinHousehold';
+import { simulateMockPurchaseCore } from './simulateMockPurchase';
 import { findLinkedAccount, recordTransactionAndNotify, IncomingPurchase } from './transactionWebhook';
 import { verifyHmacSignature } from './webhookSignature';
 
@@ -30,6 +31,16 @@ export const joinHousehold = onCall<{ inviteCode: string }>(async (request) => {
   if (!request.data.inviteCode) throw new HttpsError('invalid-argument', 'inviteCode is required.');
 
   return joinHouseholdCore(uid, request.data.inviteCode);
+});
+
+// ---------------------------------------------------------------------
+// Demo convenience — see simulateMockPurchase.ts's doc comment.
+// ---------------------------------------------------------------------
+
+export const simulateMockPurchase = onCall<{ merchantName?: string; amountCents?: number }>(async (request) => {
+  const uid = request.auth?.uid;
+  if (!uid) throw new HttpsError('unauthenticated', 'Sign in first.');
+  return simulateMockPurchaseCore(uid, request.data ?? {});
 });
 
 // ---------------------------------------------------------------------
